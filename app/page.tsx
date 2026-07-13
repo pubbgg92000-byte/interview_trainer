@@ -1,6 +1,33 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  BookOpenCheck,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Code2,
+  Download,
+  FileCheck2,
+  Lightbulb,
+  ListChecks,
+  MessageCircleQuestion,
+  Mic,
+  Play,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Target,
+  Timer,
+  TrendingUp,
+  UploadCloud,
+  UserRound,
+} from "lucide-react";
 
 type Question = {
   id: number;
@@ -513,7 +540,7 @@ export default function Home() {
       <main className="landing-shell">
         <nav className="topbar"><a className="brand" href="#top" aria-label="Resume Interview Coach home"><span className="brand-mark">R</span>Resume Interview Coach</a><button className="ghost-button" onClick={() => setScreen("setup")}>Try a demo <span>→</span></button></nav>
         <section className="hero" id="top">
-          <div className="hero-copy"><p className="eyebrow">PRACTISE WHAT YOUR RESUME PROMISES</p><h1>Turn your resume into your strongest interview answer.</h1><p className="hero-subtitle">Personalised questions, clear feedback and a better answer on every retry - built around the experience you actually have.</p><div className="hero-actions"><button className="primary-button" onClick={() => setScreen("setup")}>Start practising <span>→</span></button><button className="text-button" onClick={() => { loadDemoProfile(); setScreen("setup"); }}>Explore a sample session</button></div><p className="privacy-note">No generic question dump. Start with your resume, role and interview type.</p></div>
+          <div className="hero-copy"><p className="eyebrow">PRACTISE WHAT YOUR RESUME PROMISES</p><h1>Turn your resume into your strongest interview answer.</h1><p className="hero-subtitle">Personalised questions, clear feedback and a better answer on every retry - built around the experience you actually have.</p><div className="hero-actions"><button className="primary-button" onClick={() => setScreen("setup")}>Start practising <ArrowRight size={16} aria-hidden="true" /></button><button className="text-button" onClick={() => { loadDemoProfile(); setScreen("setup"); }}><Sparkles size={15} aria-hidden="true" /> Explore a sample session</button></div><p className="privacy-note">No generic question dump. Start with your resume, role and interview type.</p></div>
           <div className="coach-preview" aria-label="Example coaching feedback"><div className="preview-head"><span className="live-dot" /> Live practice <span>Question 3 of 12</span></div><p className="preview-label">PROJECT DEEP DIVE</p><h2>How did you make your API-connected frontend screen reliable?</h2><div className="mini-answer"><span>Your answer</span><p>“I showed loading states and handled errors...”</p></div><div className="preview-score"><div><strong>78</strong><span>/ 100</span></div><p><b>Getting stronger.</b><br />Add one real debugging example to make this answer more convincing.</p></div></div>
         </section>
         <section className="feature-row"><div><span>01</span><h3>Resume-aware questions</h3><p>Skills, projects, claims and career transitions become realistic prompts.</p></div><div><span>02</span><h3>Feedback with substance</h3><p>See what was accurate, unclear or missing - not just a generic score.</p></div><div><span>03</span><h3>Practise until it clicks</h3><p>Track every attempt and improve the same answer with purpose.</p></div></section>
@@ -542,7 +569,7 @@ export default function Home() {
       <main className="setup-shell">
         <nav className="topbar">
           <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
-          <div className="setup-nav-actions">{installPrompt && <button className="install-button" onClick={installApp}>Install app</button>}<span className="step-label">SETUP <b>01 / 02</b></span></div>
+          <div className="setup-nav-actions">{installPrompt && <button className="install-button" onClick={installApp}><Download size={14} aria-hidden="true" /> Install app</button>}<span className="step-label">SETUP <b>01 / 02</b></span></div>
         </nav>
         <section className="setup-grid">
           <div className="setup-copy">
@@ -565,7 +592,7 @@ export default function Home() {
               onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && inputRef.current?.click()}
             >
               <input ref={inputRef} type="file" accept=".pdf,.docx,.txt,application/pdf,text/plain" onChange={onFileChange} />
-              <span className="upload-icon">↑</span><b>{resumeName || (isDraggingResume ? "Drop it here" : "Drag and drop your resume")}</b><small>{resumeName ? "Ready for personalised analysis" : "or click to browse · PDF, DOCX or TXT"}</small>
+              <span className="upload-icon">{resumeName ? <FileCheck2 size={20} aria-hidden="true" /> : <UploadCloud size={20} aria-hidden="true" />}</span><b>{resumeName || (isDraggingResume ? "Drop it here" : "Drag and drop your resume")}</b><small>{resumeName ? "Ready for personalised analysis" : "or click to browse · PDF, DOCX or TXT"}</small>
             </div>
             <button className="demo-link" onClick={loadDemoProfile}>Use the frontend developer sample instead</button>
             <label>Target role <span className="optional-tag">AUTO</span><input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Automatically detected from your resume" /><small className="field-hint">Leave blank to let the coach identify your strongest matching role. Enter a role only to override it.</small></label>
@@ -584,7 +611,7 @@ export default function Home() {
             <label>What do you want to improve?<textarea className="context-textarea short" value={focusAreas} onChange={(event) => setFocusAreas(event.target.value)} placeholder="e.g. JavaScript fundamentals, explaining my projects, confidence, career gap" /></label>
             {generationError && <p className="form-error" role="alert">{generationError}</p>}
             {saveNotice && <p className="save-notice" role="status">{saveNotice}</p>}
-            <button className="primary-button full-button" disabled={!resumeName} onClick={beginPractice}>Create practice session <span>→</span></button>
+            <button className="primary-button full-button" disabled={!resumeName} onClick={beginPractice}><Sparkles size={16} aria-hidden="true" /> Create practice session <ArrowRight size={16} aria-hidden="true" /></button>
             <p className="secure-note">Your AI keys stay on the server. Resume content is only sent to create this session.</p>
           </div>
         </section>
@@ -600,17 +627,17 @@ export default function Home() {
     const readiness = completedQuestions === 0 ? "Start practising" : averageScore >= 80 ? "Interview ready" : averageScore >= 65 ? "Nearly ready" : "Needs focused practice";
     return (
       <main className="report-shell">
-        <nav className="topbar"><button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button><button className="secondary-button" onClick={() => setScreen("practice")}>Back to practice</button></nav>
+        <nav className="topbar"><button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button><button className="secondary-button" onClick={() => setScreen("practice")}><ArrowLeft size={15} aria-hidden="true" /> Back to practice</button></nav>
         <section className="report-wrap">
           <div className="report-hero"><div><p className="eyebrow">READINESS REPORT</p><h1>{readiness}</h1><p>{completedQuestions} of {sessionQuestions.length} questions practised · {allAttempts.length} total attempts</p></div><div className="readiness-score"><strong>{averageScore}</strong><span>average score</span></div></div>
           <div className="report-metrics"><div><span>Completion</span><strong>{Math.round((completedQuestions / sessionQuestions.length) * 100)}%</strong></div><div><span>Best attempt</span><strong>{allAttempts.length ? Math.max(...allAttempts.map((item) => item.score)) : 0}</strong></div><div><span>Questions remaining</span><strong>{sessionQuestions.length - completedQuestions}</strong></div></div>
           <div className="report-grid">
-            <section className="report-card"><p className="eyebrow">NEXT 24 HOURS</p><h2>Your focused revision plan</h2><ol><li>Practise the {Math.min(5, sessionQuestions.length - completedQuestions || 5)} highest-priority unanswered questions.</li><li>Repeat every answer below 75 until it has a clear example and result.</li><li>Revise: {(profile.focusTopics || []).slice(0, 3).join(", ") || "your role fundamentals"}.</li><li>Finish with one timed voice mock without opening answer guides.</li></ol></section>
-            <section className="report-card"><p className="eyebrow">WEAK ANSWERS</p><h2>Practise these again</h2>{weakQuestions.length ? <ul>{weakQuestions.map((item) => <li key={item.id}><button onClick={() => { selectQuestion(sessionQuestions.indexOf(item)); setScreen("practice"); }}>{item.prompt}</button></li>)}</ul> : <p>No low-scoring answers yet. Complete a few questions to identify weak areas.</p>}</section>
-            <section className="report-card"><p className="eyebrow">RESUME CLAIM CHECK</p><h2>Be ready to defend</h2><ul>{(profile.resumeRisks?.length ? profile.resumeRisks : sessionQuestions.slice(0, 4).map((item) => `${item.reference}: explain your exact contribution and result.`)).map((item) => <li key={item}>{item}</li>)}</ul></section>
-            <section className="report-card"><p className="eyebrow">JOB MATCH</p><h2>Strengths and gaps</h2><h3>Matches</h3><div className="report-tags">{(profile.jobMatch || profile.strengths).map((item) => <span key={item}>{item}</span>)}</div><h3>Revise or clarify</h3><div className="report-tags warning">{(profile.missingSkills || profile.focusTopics).map((item) => <span key={item}>{item}</span>)}</div></section>
+            <section className="report-card"><span className="card-icon teal"><BookOpenCheck size={19} aria-hidden="true" /></span><p className="eyebrow">NEXT 24 HOURS</p><h2>Your focused revision plan</h2><ol><li>Practise the {Math.min(5, sessionQuestions.length - completedQuestions || 5)} highest-priority unanswered questions.</li><li>Repeat every answer below 75 until it has a clear example and result.</li><li>Revise: {(profile.focusTopics || []).slice(0, 3).join(", ") || "your role fundamentals"}.</li><li>Finish with one timed voice mock without opening answer guides.</li></ol></section>
+            <section className="report-card"><span className="card-icon gold"><TrendingUp size={19} aria-hidden="true" /></span><p className="eyebrow">WEAK ANSWERS</p><h2>Practise these again</h2>{weakQuestions.length ? <ul>{weakQuestions.map((item) => <li key={item.id}><button onClick={() => { selectQuestion(sessionQuestions.indexOf(item)); setScreen("practice"); }}>{item.prompt}</button></li>)}</ul> : <p>No low-scoring answers yet. Complete a few questions to identify weak areas.</p>}</section>
+            <section className="report-card"><span className="card-icon coral"><ShieldCheck size={19} aria-hidden="true" /></span><p className="eyebrow">RESUME CLAIM CHECK</p><h2>Be ready to defend</h2><ul>{(profile.resumeRisks?.length ? profile.resumeRisks : sessionQuestions.slice(0, 4).map((item) => `${item.reference}: explain your exact contribution and result.`)).map((item) => <li key={item}>{item}</li>)}</ul></section>
+            <section className="report-card"><span className="card-icon teal"><Target size={19} aria-hidden="true" /></span><p className="eyebrow">JOB MATCH</p><h2>Strengths and gaps</h2><h3>Matches</h3><div className="report-tags">{(profile.jobMatch || profile.strengths).map((item) => <span key={item}>{item}</span>)}</div><h3>Revise or clarify</h3><div className="report-tags warning">{(profile.missingSkills || profile.focusTopics).map((item) => <span key={item}>{item}</span>)}</div></section>
           </div>
-          <div className="report-actions"><button className="secondary-button" onClick={clearSavedSession}>Clear saved progress</button><button className="primary-button" onClick={() => setScreen("practice")}>Continue practising <span>→</span></button></div>
+          <div className="report-actions"><button className="secondary-button" onClick={clearSavedSession}><RotateCcw size={15} aria-hidden="true" /> Clear saved progress</button><button className="primary-button" onClick={() => setScreen("practice")}>Continue practising <ArrowRight size={16} aria-hidden="true" /></button></div>
         </section>
       </main>
     );
@@ -623,39 +650,39 @@ export default function Home() {
         <div className="candidate-card"><span className="initials">{profile.candidateName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><b>{profile.candidateName}</b><small>{profile.headline || role}</small></div></div>
         <div className="session-info"><p>YOUR SESSION</p><strong>{practiceMode}</strong><span>{difficulty} · {sessionQuestions.length} resume-matched questions</span><i><i style={{ width: `${(completedQuestions / sessionQuestions.length) * 100}%` }} /></i></div>
         <ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => selectQuestion(index)}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""} · ${attempts[item.id].at(-1)?.score}` : "Not started"}</small></div></button></li>)}</ol>
-        <button className="report-link" onClick={() => setScreen("report")}>View readiness report <span>{averageScore || "—"}</span></button>
-        <button className="sidebar-link" onClick={() => setScreen("setup")}>← Edit session settings</button>
+        <button className="report-link" onClick={() => setScreen("report")}><BarChart3 size={16} aria-hidden="true" /> View readiness report <span>{averageScore || "—"}</span></button>
+        <button className="sidebar-link" onClick={() => setScreen("setup")}><ArrowLeft size={14} aria-hidden="true" /> Edit session settings</button>
       </aside>
 
       <section className="practice-area">
-        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}>Report {averageScore || "—"}</button><span className="difficulty-pill">{question.level}</span><span className="ai-badge">✦ AI interviewer</span></div></header>
-        <article className="question-card"><div className="question-meta"><span>{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><details className="intent-note"><summary>Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b>Check these cases</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
+        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}><BarChart3 size={13} aria-hidden="true" /> {averageScore || "—"}</button><span className="difficulty-pill">{question.level}</span><span className="ai-badge"><Sparkles size={13} aria-hidden="true" /> AI interviewer</span></div></header>
+        <article className="question-card"><div className="question-meta"><span>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><details className="intent-note"><summary><Lightbulb size={15} aria-hidden="true" /> Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><Lightbulb size={15} aria-hidden="true" /><span><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</span></p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b><ListChecks size={14} aria-hidden="true" /> Check these cases</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
 
         <section className="answer-card">
           <div className="answer-heading"><div><h2>{question.kind === "coding" ? "Your solution" : "Your answer"}</h2><p>{question.kind === "coding" ? "Write JavaScript, run it, then explain your choices." : "Speak or type naturally. The coach looks for useful detail, not length."}</p></div><span className={answerReady ? "word-good" : ""}>{question.kind === "coding" ? `${answer.split("\n").length} lines` : `${cleanWords(answer).length} words`}</span></div>
-          {question.kind !== "coding" && <div className="voice-toolbar"><button className={`voice-button ${isListening ? "is-live" : ""}`} disabled={!speechSupported} onClick={toggleVoice}>{isListening ? "■ Stop recording" : "● Answer with voice"}</button><div className={`answer-timer ${secondsLeft <= 15 ? "time-low" : ""}`}><strong>{String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</strong><span>90-sec target</span></div><span>{speechSupported ? `${fillerCount} filler word${fillerCount === 1 ? "" : "s"}` : "Voice unavailable — type your answer"}</span></div>}
+          {question.kind !== "coding" && <div className="voice-toolbar"><button className={`voice-button ${isListening ? "is-live" : ""}`} disabled={!speechSupported} onClick={toggleVoice}>{isListening ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}{isListening ? "Stop recording" : "Answer with voice"}</button><div className={`answer-timer ${secondsLeft <= 15 ? "time-low" : ""}`}><Timer size={14} aria-hidden="true" /><strong>{String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</strong><span>90-sec target</span></div><span>{speechSupported ? `${fillerCount} filler word${fillerCount === 1 ? "" : "s"}` : "Voice unavailable — type your answer"}</span></div>}
           <textarea className={question.kind === "coding" ? "code-editor" : ""} value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder={question.kind === "coding" ? "Write your JavaScript solution here…" : "Start with the situation or your responsibility. Then explain what you did and what happened..."} aria-label={question.kind === "coding" ? "Your code solution" : "Your interview answer"} spellCheck={question.kind !== "coding"} />
-          {question.kind === "coding" && <div className="code-runner"><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}>Run JavaScript</button><pre aria-live="polite">{codeOutput || "Console output will appear here."}</pre></div>}
+          {question.kind === "coding" && <div className="code-runner"><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}><Play size={14} fill="currentColor" aria-hidden="true" /> Run JavaScript</button><pre aria-live="polite">{codeOutput || "Console output will appear here."}</pre></div>}
           {!feedback && <div className="answer-help">
-            <button className="help-button" onClick={() => setShowSuggested((current) => !current)}>{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
+            <button className="help-button" onClick={() => setShowSuggested((current) => !current)}><BookOpenCheck size={14} aria-hidden="true" />{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
             {showSuggested && <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>}
           </div>}
-          {!feedback && <div className="answer-footer"><span>{!answerReady ? (question.kind === "coding" ? "Add a complete solution before requesting feedback." : "Give a few complete sentences to get feedback.") : "Ready when you are."}</span><button className="primary-button" disabled={!answerReady || isEvaluating} onClick={submitAnswer}>{isEvaluating ? "AI coach is reviewing…" : "Get coaching feedback"} <span>→</span></button></div>}
+          {!feedback && <div className="answer-footer"><span>{!answerReady ? (question.kind === "coding" ? "Add a complete solution before requesting feedback." : "Give a few complete sentences to get feedback.") : "Ready when you are."}</span><button className="primary-button" disabled={!answerReady || isEvaluating} onClick={submitAnswer}>{isEvaluating ? <Sparkles className="icon-spin" size={15} aria-hidden="true" /> : <CheckCircle2 size={15} aria-hidden="true" />}{isEvaluating ? "AI coach is reviewing…" : "Get coaching feedback"}<ArrowRight size={15} aria-hidden="true" /></button></div>}
           {evaluationError && <p className="inline-warning" role="status">{evaluationError}</p>}
         </section>
 
         {feedback && <section className="feedback-section">
           <div className="score-card"><div className="score-orbit"><strong>{feedback.total}</strong><span>out of 100</span></div><div><p className="eyebrow">YOUR COACHING RESULT</p><h2>{feedback.total >= 75 ? "A strong answer with room to sharpen." : "Good start. Add the details that make it believable."}</h2><p>{feedback.summary}</p></div><div className="attempt-history"><span>ATTEMPTS</span>{questionAttempts.map((attempt, index) => <div key={`${attempt.score}-${index}`}><small>Try {index + 1}</small><b>{attempt.score}</b>{index > 0 && <em>{attempt.score - questionAttempts[index - 1].score >= 0 ? "+" : ""}{attempt.score - questionAttempts[index - 1].score}</em>}</div>)}</div></div>
           <div className="score-breakdown">{scoreLabels.map(([key, label, max]) => { const value = feedback.scores[key]; return <div key={key}><div><span>{label}</span><b>{value}/{max}</b></div><i><i style={{ width: `${(value / max) * 100}%` }} /></i></div>; })}</div>
-          <div className="feedback-grid"><div className="feedback-box success"><h3>What worked</h3><ul>{feedback.worked.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="feedback-box improve"><h3>Make it stronger</h3><ul>{feedback.improve.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
+          <div className="feedback-grid"><div className="feedback-box success"><h3><CheckCircle2 size={17} aria-hidden="true" /> What worked</h3><ul>{feedback.worked.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="feedback-box improve"><h3><CircleAlert size={17} aria-hidden="true" /> Make it stronger</h3><ul>{feedback.improve.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
           <details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>See a stronger answer <span>⌄</span></summary><div><p>{feedback.betterAnswer}</p><small>Use this as a structure guide. Keep only details you can truthfully defend.</small></div></details>
-          <div className="follow-up-card"><p className="eyebrow">THE INTERVIEWER CONTINUES</p><h3>{feedback.followUp}</h3><div>{feedback.relatedTopics.map((topic) => <span key={topic}>{topic}</span>)}</div></div>
-          <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}>↻ Improve this answer</button><button className="secondary-button" onClick={practiseFollowUp}>Answer follow-up</button><button className="primary-button" onClick={nextQuestion}>Next question <span>→</span></button></div>
+          <div className="follow-up-card"><p className="eyebrow"><MessageCircleQuestion size={14} aria-hidden="true" /> THE INTERVIEWER CONTINUES</p><h3>{feedback.followUp}</h3><div>{feedback.relatedTopics.map((topic) => <span key={topic}>{topic}</span>)}</div></div>
+          <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}><RotateCcw size={15} aria-hidden="true" /> Improve this answer</button><button className="secondary-button" onClick={practiseFollowUp}><MessageCircleQuestion size={15} aria-hidden="true" /> Answer follow-up</button><button className="primary-button" onClick={nextQuestion}>Next question <ArrowRight size={15} aria-hidden="true" /></button></div>
         </section>}
       </section>
 
-      <aside className="coach-rail"><div className="rail-card"><span className="rail-icon">✦</span><p className="eyebrow">RESUME SNAPSHOT</p><h3>{profile.headline}</h3><p>{profile.summary}</p></div><div className="rail-card"><p className="eyebrow">LISTEN FOR</p><ul>{question.expected.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card"><p className="eyebrow">TOPICS TO REVISE</p><ul>{profile.focusTopics.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card follow-up"><p className="eyebrow">LIKELY FOLLOW-UP</p><p>{question.followUp}</p></div></aside>
-      <nav className="mobile-bottom-nav" aria-label="Practice navigation"><button onClick={() => selectQuestion(Math.max(0, questionIndex - 1))}>← Previous</button><button className="active">{questionIndex + 1} / {sessionQuestions.length}</button><button onClick={nextQuestion}>Next →</button><button onClick={() => setScreen("report")}>Report</button></nav>
+      <aside className="coach-rail"><div className="rail-card"><span className="rail-icon"><UserRound size={18} aria-hidden="true" /></span><p className="eyebrow">RESUME SNAPSHOT</p><h3>{profile.headline}</h3><p>{profile.summary}</p></div><div className="rail-card"><p className="eyebrow"><ListChecks size={13} aria-hidden="true" /> LISTEN FOR</p><ul>{question.expected.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card"><p className="eyebrow"><BookOpenCheck size={13} aria-hidden="true" /> TOPICS TO REVISE</p><ul>{profile.focusTopics.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card follow-up"><p className="eyebrow"><MessageCircleQuestion size={13} aria-hidden="true" /> LIKELY FOLLOW-UP</p><p>{question.followUp}</p></div></aside>
+      <nav className="mobile-bottom-nav" aria-label="Practice navigation"><button onClick={() => selectQuestion(Math.max(0, questionIndex - 1))}><ChevronLeft size={17} aria-hidden="true" /><span>Previous</span></button><button className="active"><ListChecks size={17} aria-hidden="true" /><span>{questionIndex + 1} / {sessionQuestions.length}</span></button><button onClick={nextQuestion}><ChevronRight size={17} aria-hidden="true" /><span>Next</span></button><button onClick={() => setScreen("report")}><BarChart3 size={17} aria-hidden="true" /><span>Report</span></button></nav>
     </main>
   );
 }
