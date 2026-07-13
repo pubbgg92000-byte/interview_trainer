@@ -38,6 +38,7 @@ test("keeps Gemini private and includes the full coaching flow", async () => {
   assert.match(page, /What do you want to improve\?/);
   assert.match(page, /50 maximum-coverage questions/);
   assert.match(page, /Get coaching feedback/);
+  assert.match(page, /I don’t know — show answer guide/);
   assert.match(page, /THE INTERVIEWER CONTINUES/);
   assert.match(route, /process\.env\.GEMINI_API_KEY/);
   assert.match(route, /process\.env\.OPENROUTER_API_KEY/);

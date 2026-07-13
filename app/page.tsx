@@ -386,6 +386,10 @@ export default function Home() {
         <section className="answer-card">
           <div className="answer-heading"><div><h2>Your answer</h2><p>Write as you would speak. The coach looks for useful detail, not length.</p></div><span className={answer.length > 35 ? "word-good" : ""}>{cleanWords(answer).length} words</span></div>
           <textarea value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder="Start with the situation or your responsibility. Then explain what you did and what happened..." aria-label="Your interview answer" />
+          {!feedback && <div className="answer-help">
+            <button className="help-button" onClick={() => setShowSuggested((current) => !current)}>{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
+            {showSuggested && <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>}
+          </div>}
           {!feedback && <div className="answer-footer"><span>{answer.trim().length < 35 ? "Write at least a few complete sentences to get feedback." : "Ready when you are."}</span><button className="primary-button" disabled={answer.trim().length < 35 || isEvaluating} onClick={submitAnswer}>{isEvaluating ? "Gemini is reviewing…" : "Get coaching feedback"} <span>→</span></button></div>}
           {evaluationError && <p className="inline-warning" role="status">{evaluationError}</p>}
         </section>
