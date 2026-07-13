@@ -24,6 +24,10 @@ type GeneratedQuestion = {
   expected_points?: string[];
   suggested_answer?: string;
   follow_up?: string;
+  kind?: "interview" | "coding";
+  starter_code?: string;
+  test_cases?: string[];
+  solution_outline?: string;
 };
 
 type DimensionKey =
@@ -171,6 +175,7 @@ async function createSession(form: FormData, geminiKey: string | undefined, open
   const focusAreas = String(form.get("focusAreas") || "Not provided").slice(0, 1000);
   const jobDescription = String(form.get("jobDescription") || "Not provided").slice(0, 12000);
   const interviewType = String(form.get("interviewType") || "Mixed interview").slice(0, 120);
+  const practiceMode = String(form.get("practiceMode") || "Mock interview").slice(0, 60);
   const difficulty = String(form.get("difficulty") || "Intermediate").slice(0, 30);
   const requestedCount = Number(form.get("questionCount") || 30);
   const questionCount = [20, 30, 40, 50].includes(requestedCount) ? requestedCount : 30;
@@ -195,14 +200,14 @@ Rules:
 - Use only claims supported by the resume. Never invent employers, dates, metrics, certifications, technologies, or achievements.
 - Cover introduction, role-specific knowledge, project depth, and behavioural evidence when relevant.
 - Build a comprehensive bank across resume walkthrough, career transition, JavaScript, the candidate's frontend framework, HTML/CSS/responsiveness, REST APIs, debugging, performance, testing, deployment, AI/automation claims, project deep dives, behavioural situations, and hiring-manager fit. Omit a category only when the resume and role make it irrelevant.
-- Make roughly one quarter of the questions practical problem-solving scenarios. Ask the candidate to reason through code, debugging, UI state, architecture, or trade-offs without requiring an embedded code editor.
+- Practice mode: ${practiceMode}. In Coding lab mode, make at least two thirds of the questions hands-on coding, debugging, refactoring, or implementation tasks and include concise starter code and test cases. Otherwise, make roughly one quarter practical problem-solving scenarios.
 - Order questions from high-probability opening questions to deeper technical and follow-up questions. Avoid duplicates and superficial rewordings.
 - Expected points must be short concepts that can be checked in a spoken answer.
 - Keep each suggested answer to 2-4 concise sentences. Suggested answers are structure guides. Use cautious first-person placeholders such as "I would explain..." wherever facts are not explicit.
 - Identify 3-6 focused topics the candidate should revise for the target role.
 
 Return ONLY valid JSON in this exact shape:
-{"profile":{"candidate_name":"...","headline":"...","summary":"...","strengths":["..."],"focus_topics":["..."]},"questions":[{"category":"...","difficulty":"${difficulty}","question":"...","resume_reference":"...","skills_tested":["..."],"expected_points":["..."],"suggested_answer":"...","follow_up":"..."}]}
+{"profile":{"candidate_name":"...","headline":"...","summary":"...","strengths":["..."],"focus_topics":["..."],"job_match":["..."],"missing_skills":["..."],"resume_risks":["..."]},"questions":[{"category":"...","difficulty":"${difficulty}","kind":"interview","question":"...","resume_reference":"...","skills_tested":["..."],"expected_points":["..."],"suggested_answer":"...","follow_up":"...","starter_code":"","test_cases":["..."],"solution_outline":"..."}]}
 
 Resume text follows:
 ${resumeText}`;
@@ -229,7 +234,7 @@ ${resumeText}`;
 
   try {
     const payload = parseJson<{
-      profile?: { candidate_name?: string; headline?: string; summary?: string; strengths?: string[]; focus_topics?: string[] };
+      profile?: { candidate_name?: string; headline?: string; summary?: string; strengths?: string[]; focus_topics?: string[]; job_match?: string[]; missing_skills?: string[]; resume_risks?: string[] };
       questions?: GeneratedQuestion[];
     }>(generated.text);
     const items = payload.questions?.slice(0, questionCount) || [];
@@ -245,6 +250,10 @@ ${resumeText}`;
       expected: cleanStringArray(item.expected_points, 8).length ? cleanStringArray(item.expected_points, 8) : ["example", "contribution"],
       suggested: item.suggested_answer || "Use a clear context, contribution, action, and result structure.",
       followUp: item.follow_up || "What was your exact contribution?",
+      kind: item.kind === "coding" ? "coding" : "interview",
+      starterCode: item.starter_code || "",
+      testCases: cleanStringArray(item.test_cases, 6),
+      solutionOutline: item.solution_outline || item.suggested_answer || "Explain the approach, edge cases, complexity, and testing strategy.",
     }));
 
     return NextResponse.json({
@@ -256,6 +265,9 @@ ${resumeText}`;
         summary: payload.profile?.summary || `Interview preparation for ${role}.`,
         strengths: cleanStringArray(payload.profile?.strengths, 6),
         focusTopics: cleanStringArray(payload.profile?.focus_topics, 6),
+        jobMatch: cleanStringArray(payload.profile?.job_match, 6),
+        missingSkills: cleanStringArray(payload.profile?.missing_skills, 6),
+        resumeRisks: cleanStringArray(payload.profile?.resume_risks, 6),
       },
     });
   } catch {
@@ -270,12 +282,13 @@ async function evaluateAnswer(form: FormData, geminiKey: string | undefined, ope
   const reference = String(form.get("reference") || "Uploaded resume").slice(0, 1000);
   const expected = String(form.get("expected") || "").slice(0, 3000);
   const suggested = String(form.get("suggested") || "").slice(0, 5000);
+  const kind = String(form.get("kind") || "interview").slice(0, 20);
 
-  if (answer.trim().length < 35 || !question.trim()) {
+  if (answer.trim().length < (kind === "coding" ? 12 : 35) || !question.trim()) {
     return NextResponse.json({ error: "Please give a complete answer before requesting feedback." }, { status: 400 });
   }
 
-  const prompt = `Act as a fair, specific interviewer and coach for a ${role} candidate. Evaluate the candidate's answer to the interview question. Do not reward buzzwords alone and do not assume facts that are not in the supplied resume reference. Treat the suggested answer only as a structure guide.
+  const prompt = `Act as a fair, specific interviewer and coach for a ${role} candidate. Evaluate the candidate's ${kind === "coding" ? "code solution and technical reasoning" : "answer"} to the interview question. Do not reward buzzwords alone and do not assume facts that are not in the supplied resume reference. Treat the suggested answer only as a structure guide.
 
 Question: ${question}
 Resume reference: ${reference}

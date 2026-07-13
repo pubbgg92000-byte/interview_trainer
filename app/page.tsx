@@ -12,9 +12,13 @@ type Question = {
   expected: string[];
   suggested: string;
   followUp: string;
+  kind?: "interview" | "coding";
+  starterCode?: string;
+  testCases?: string[];
+  solutionOutline?: string;
 };
 
-type Attempt = { score: number; answer: string };
+type Attempt = { score: number; answer: string; createdAt?: string };
 
 type Profile = {
   candidateName: string;
@@ -22,7 +26,23 @@ type Profile = {
   summary: string;
   strengths: string[];
   focusTopics: string[];
+  jobMatch?: string[];
+  missingSkills?: string[];
+  resumeRisks?: string[];
 };
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+};
+
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
 type CoachResult = {
   scores: Record<(typeof scoreLabels)[number][0], number>;
@@ -113,7 +133,13 @@ const defaultProfile: Profile = {
   summary: "Frontend-focused candidate with experience in responsive interfaces, APIs, testing, and AI workflows.",
   strengths: ["Frontend delivery", "API integration", "AI workflow exposure"],
   focusTopics: ["Frontend architecture", "API reliability", "Testing strategy", "Behavioural stories"],
+  jobMatch: ["Responsive frontend delivery", "REST API integration"],
+  missingSkills: ["Add the job description to identify gaps"],
+  resumeRisks: ["Be ready to explain your exact contribution and measurable results"],
 };
+
+const STORAGE_KEY = "resume-coach-session-v2";
+const fillerWords = ["um", "uh", "like", "basically", "actually", "literally", "you know"];
 
 const waitingTips = [
   "A clear answer is better than a long answer. Lead with what you personally did.",
@@ -166,14 +192,15 @@ function evaluate(question: Question, answer: string) {
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<"home" | "setup" | "practice">("setup");
+  const [screen, setScreen] = useState<"home" | "setup" | "practice" | "report">("setup");
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [interviewStage, setInterviewStage] = useState("Technical round");
-  const [interviewDate, setInterviewDate] = useState("2026-07-15");
+  const [interviewDate, setInterviewDate] = useState(() => new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10));
   const [jobDescription, setJobDescription] = useState("");
   const [focusAreas, setFocusAreas] = useState("");
   const [interviewType, setInterviewType] = useState("Mixed interview");
+  const [practiceMode, setPracticeMode] = useState("Mock interview");
   const [difficulty, setDifficulty] = useState("Intermediate");
   const [questionCount, setQuestionCount] = useState("30");
   const [resumeName, setResumeName] = useState("");
@@ -192,16 +219,131 @@ export default function Home() {
   const [feedback, setFeedback] = useState<CoachResult | null>(null);
   const [showSuggested, setShowSuggested] = useState(false);
   const [attempts, setAttempts] = useState<Record<number, Attempt[]>>({});
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(90);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [codeOutput, setCodeOutput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const question = sessionQuestions[questionIndex];
   const localResult = useMemo(() => evaluate(question, answer), [answer, question]);
   const questionAttempts = attempts[question.id] ?? [];
+  const completedQuestions = Object.values(attempts).filter((items) => items.length > 0).length;
+  const allAttempts = Object.values(attempts).flat();
+  const averageScore = allAttempts.length ? Math.round(allAttempts.reduce((sum, item) => sum + item.score, 0) / allAttempts.length) : 0;
+  const fillerCount = fillerWords.reduce((count, filler) => count + (answer.toLowerCase().match(new RegExp(`\\b${filler.replace(" ", "\\s+")}\\b`, "g"))?.length || 0), 0);
+  const answerReady = question.kind === "coding" ? answer.trim().length >= 12 : answer.trim().length >= 35;
 
   useEffect(() => {
     if (!isGenerating) return;
     const timer = window.setInterval(() => setTipIndex((current) => (current + 1) % waitingTips.length), 3200);
     return () => window.clearInterval(timer);
   }, [isGenerating]);
+
+  useEffect(() => {
+    let restored: { questions?: Question[]; profile?: Profile; attempts?: Record<number, Attempt[]>; questionIndex?: number; role?: string; practiceMode?: string } | null = null;
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) restored = JSON.parse(saved);
+    } catch {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+    window.queueMicrotask(() => {
+      if (restored?.questions?.length) setSessionQuestions(restored.questions);
+      if (restored?.profile) setProfile(restored.profile);
+      if (restored?.attempts) setAttempts(restored.attempts);
+      if (typeof restored?.questionIndex === "number") setQuestionIndex(restored.questionIndex);
+      if (restored?.role) setRole(restored.role);
+      if (restored?.practiceMode) setPracticeMode(restored.practiceMode);
+      if (restored) setSaveNotice("Previous progress restored on this device.");
+      setIsHydrated(true);
+    });
+
+    const SpeechRecognition = (window as typeof window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
+      || (window as typeof window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+    window.queueMicrotask(() => setSpeechSupported(Boolean(SpeechRecognition)));
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const captureInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
+    window.addEventListener("beforeinstallprompt", captureInstall);
+    return () => window.removeEventListener("beforeinstallprompt", captureInstall);
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated || !sessionQuestions.length) return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ questions: sessionQuestions, profile, attempts, questionIndex, role, practiceMode }));
+  }, [attempts, isHydrated, practiceMode, profile, questionIndex, role, sessionQuestions]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const timer = window.setInterval(() => setSecondsLeft((current) => {
+      if (current <= 1) {
+        setTimerRunning(false);
+        recognitionRef.current?.stop();
+        return 0;
+      }
+      return current - 1;
+    }), 1000);
+    return () => window.clearInterval(timer);
+  }, [timerRunning]);
+
+  function toggleVoice() {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      setTimerRunning(false);
+      return;
+    }
+    const Recognition = (window as typeof window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
+      || (window as typeof window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-IN";
+    let committed = answer.trim();
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result.isFinal) committed = `${committed} ${result[0].transcript}`.trim();
+        else interim += result[0].transcript;
+      }
+      setAnswer(`${committed} ${interim}`.trim());
+    };
+    recognition.onend = () => { setIsListening(false); setTimerRunning(false); };
+    recognition.onerror = () => { setIsListening(false); setTimerRunning(false); setEvaluationError("Microphone transcription stopped. You can continue by typing."); };
+    recognitionRef.current = recognition;
+    setSecondsLeft(90);
+    setTimerRunning(true);
+    setIsListening(true);
+    recognition.start();
+  }
+
+  function resetAnswerTools() {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setTimerRunning(false);
+    setSecondsLeft(90);
+    setCodeOutput("");
+  }
+
+  function runCode() {
+    if (!answer.trim()) return;
+    setCodeOutput("Running…");
+    const workerSource = `self.onmessage=({data})=>{const logs=[];const console={log:(...v)=>logs.push(v.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '))};try{new Function('console',data)(console);self.postMessage({ok:true,text:logs.join('\\n')||'Code ran without console output.'})}catch(error){self.postMessage({ok:false,text:error?.message||String(error)})}}`;
+    const worker = new Worker(URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" })));
+    const timeout = window.setTimeout(() => { worker.terminate(); setCodeOutput("Stopped after 2 seconds. Check for an infinite loop."); }, 2000);
+    worker.onmessage = (event: MessageEvent<{ ok: boolean; text: string }>) => {
+      window.clearTimeout(timeout);
+      setCodeOutput(`${event.data.ok ? "✓" : "Error:"} ${event.data.text}`);
+      worker.terminate();
+    };
+    worker.postMessage(answer);
+  }
 
   function acceptResume(file: File) {
     if (!/\.(pdf|docx|txt)$/i.test(file.name)) {
@@ -255,6 +397,7 @@ export default function Home() {
       formData.append("jobDescription", jobDescription);
       formData.append("focusAreas", focusAreas);
       formData.append("interviewType", interviewType);
+      formData.append("practiceMode", practiceMode);
       formData.append("difficulty", difficulty);
       formData.append("questionCount", questionCount);
       if (resumeFile) formData.append("resume", resumeFile);
@@ -267,8 +410,10 @@ export default function Home() {
         if (!role.trim() && data.profile.headline) setRole(data.profile.headline);
       }
       setQuestionIndex(0);
+      setAnswer(data.questions[0]?.kind === "coding" ? data.questions[0]?.starterCode || "" : "");
       setAttempts({});
       setFeedback(null);
+      setSaveNotice("Session saved automatically on this device.");
       setScreen("practice");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Question generation failed. Please try again.");
@@ -279,7 +424,7 @@ export default function Home() {
   }
 
   async function submitAnswer() {
-    if (answer.trim().length < 35) return;
+    if (!answerReady) return;
     setIsEvaluating(true);
     setEvaluationError("");
     try {
@@ -291,21 +436,23 @@ export default function Home() {
       formData.append("reference", question.reference);
       formData.append("expected", question.expected.join(", "));
       formData.append("suggested", question.suggested);
+      formData.append("kind", question.kind || "interview");
       const response = await fetch("/api/interview", { method: "POST", body: formData });
       const data = await response.json();
       if (!response.ok || typeof data.total !== "number") throw new Error(data.error || "Feedback failed.");
       setFeedback(data);
-      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: data.total, answer }] }));
+      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: data.total, answer, createdAt: new Date().toISOString() }] }));
     } catch (error) {
       setEvaluationError(error instanceof Error ? error.message : "AI feedback is unavailable. Showing an instant coaching estimate instead.");
       setFeedback(localResult);
-      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: localResult.total, answer }] }));
+      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: localResult.total, answer, createdAt: new Date().toISOString() }] }));
     } finally {
       setIsEvaluating(false);
     }
   }
 
   function tryAgain() {
+    resetAnswerTools();
     setFeedback(null);
     setEvaluationError("");
     setShowSuggested(false);
@@ -313,11 +460,52 @@ export default function Home() {
   }
 
   function nextQuestion() {
-    setQuestionIndex((current) => (current + 1) % sessionQuestions.length);
-    setAnswer("");
+    selectQuestion((questionIndex + 1) % sessionQuestions.length);
+  }
+
+  function selectQuestion(index: number) {
+    resetAnswerTools();
+    setQuestionIndex(index);
+    setAnswer(sessionQuestions[index]?.kind === "coding" ? sessionQuestions[index]?.starterCode || "" : "");
     setFeedback(null);
     setEvaluationError("");
     setShowSuggested(false);
+  }
+
+  function practiseFollowUp() {
+    if (!feedback?.followUp) return;
+    const followUpQuestion: Question = {
+      id: Math.max(...sessionQuestions.map((item) => item.id)) + 1,
+      category: "Adaptive follow-up",
+      level: question.level,
+      prompt: feedback.followUp,
+      reference: question.reference,
+      tested: feedback.relatedTopics.length ? feedback.relatedTopics : question.tested,
+      expected: question.expected,
+      suggested: "Answer the follow-up directly, add one defensible example, and connect it to the decision or result you described previously.",
+      followUp: "What would you do differently next time?",
+      kind: "interview",
+    };
+    setSessionQuestions((current) => [...current, followUpQuestion]);
+    setQuestionIndex(sessionQuestions.length);
+    setAnswer("");
+    setFeedback(null);
+    setShowSuggested(false);
+    resetAnswerTools();
+  }
+
+  function clearSavedSession() {
+    window.localStorage.removeItem(STORAGE_KEY);
+    setAttempts({});
+    setQuestionIndex(0);
+    setSaveNotice("Saved progress cleared.");
+  }
+
+  async function installApp() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
   }
 
   if (screen === "home") {
@@ -354,7 +542,7 @@ export default function Home() {
       <main className="setup-shell">
         <nav className="topbar">
           <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
-          <span className="step-label">SETUP <b>01 / 02</b></span>
+          <div className="setup-nav-actions">{installPrompt && <button className="install-button" onClick={installApp}>Install app</button>}<span className="step-label">SETUP <b>01 / 02</b></span></div>
         </nav>
         <section className="setup-grid">
           <div className="setup-copy">
@@ -381,6 +569,7 @@ export default function Home() {
             </div>
             <button className="demo-link" onClick={loadDemoProfile}>Use the frontend developer sample instead</button>
             <label>Target role <span className="optional-tag">AUTO</span><input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Automatically detected from your resume" /><small className="field-hint">Leave blank to let the coach identify your strongest matching role. Enter a role only to override it.</small></label>
+            <label>Practice experience<select value={practiceMode} onChange={(event) => setPracticeMode(event.target.value)}><option>Mock interview</option><option>Voice interview</option><option>Coding lab</option></select></label>
             <div className="option-grid">
               <label>Interview type<select value={interviewType} onChange={(event) => setInterviewType(event.target.value)}><option>Mixed interview</option><option>Technical interview</option><option>Project-based interview</option><option>Behavioural interview</option><option>Rapid-fire interview</option></select></label>
               <label>Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label>
@@ -394,9 +583,34 @@ export default function Home() {
             <label>Job description (recommended)<textarea className="context-textarea" value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="Paste the job description so questions match what the employer needs." /></label>
             <label>What do you want to improve?<textarea className="context-textarea short" value={focusAreas} onChange={(event) => setFocusAreas(event.target.value)} placeholder="e.g. JavaScript fundamentals, explaining my projects, confidence, career gap" /></label>
             {generationError && <p className="form-error" role="alert">{generationError}</p>}
+            {saveNotice && <p className="save-notice" role="status">{saveNotice}</p>}
             <button className="primary-button full-button" disabled={!resumeName} onClick={beginPractice}>Create practice session <span>→</span></button>
             <p className="secure-note">Your AI keys stay on the server. Resume content is only sent to create this session.</p>
           </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (screen === "report") {
+    const weakQuestions = sessionQuestions.filter((item) => {
+      const itemAttempts = attempts[item.id];
+      return itemAttempts?.length && itemAttempts[itemAttempts.length - 1].score < 75;
+    }).slice(0, 5);
+    const readiness = completedQuestions === 0 ? "Start practising" : averageScore >= 80 ? "Interview ready" : averageScore >= 65 ? "Nearly ready" : "Needs focused practice";
+    return (
+      <main className="report-shell">
+        <nav className="topbar"><button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button><button className="secondary-button" onClick={() => setScreen("practice")}>Back to practice</button></nav>
+        <section className="report-wrap">
+          <div className="report-hero"><div><p className="eyebrow">READINESS REPORT</p><h1>{readiness}</h1><p>{completedQuestions} of {sessionQuestions.length} questions practised · {allAttempts.length} total attempts</p></div><div className="readiness-score"><strong>{averageScore}</strong><span>average score</span></div></div>
+          <div className="report-metrics"><div><span>Completion</span><strong>{Math.round((completedQuestions / sessionQuestions.length) * 100)}%</strong></div><div><span>Best attempt</span><strong>{allAttempts.length ? Math.max(...allAttempts.map((item) => item.score)) : 0}</strong></div><div><span>Questions remaining</span><strong>{sessionQuestions.length - completedQuestions}</strong></div></div>
+          <div className="report-grid">
+            <section className="report-card"><p className="eyebrow">NEXT 24 HOURS</p><h2>Your focused revision plan</h2><ol><li>Practise the {Math.min(5, sessionQuestions.length - completedQuestions || 5)} highest-priority unanswered questions.</li><li>Repeat every answer below 75 until it has a clear example and result.</li><li>Revise: {(profile.focusTopics || []).slice(0, 3).join(", ") || "your role fundamentals"}.</li><li>Finish with one timed voice mock without opening answer guides.</li></ol></section>
+            <section className="report-card"><p className="eyebrow">WEAK ANSWERS</p><h2>Practise these again</h2>{weakQuestions.length ? <ul>{weakQuestions.map((item) => <li key={item.id}><button onClick={() => { selectQuestion(sessionQuestions.indexOf(item)); setScreen("practice"); }}>{item.prompt}</button></li>)}</ul> : <p>No low-scoring answers yet. Complete a few questions to identify weak areas.</p>}</section>
+            <section className="report-card"><p className="eyebrow">RESUME CLAIM CHECK</p><h2>Be ready to defend</h2><ul>{(profile.resumeRisks?.length ? profile.resumeRisks : sessionQuestions.slice(0, 4).map((item) => `${item.reference}: explain your exact contribution and result.`)).map((item) => <li key={item}>{item}</li>)}</ul></section>
+            <section className="report-card"><p className="eyebrow">JOB MATCH</p><h2>Strengths and gaps</h2><h3>Matches</h3><div className="report-tags">{(profile.jobMatch || profile.strengths).map((item) => <span key={item}>{item}</span>)}</div><h3>Revise or clarify</h3><div className="report-tags warning">{(profile.missingSkills || profile.focusTopics).map((item) => <span key={item}>{item}</span>)}</div></section>
+          </div>
+          <div className="report-actions"><button className="secondary-button" onClick={clearSavedSession}>Clear saved progress</button><button className="primary-button" onClick={() => setScreen("practice")}>Continue practising <span>→</span></button></div>
         </section>
       </main>
     );
@@ -407,23 +621,26 @@ export default function Home() {
       <aside className="sidebar">
         <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
         <div className="candidate-card"><span className="initials">{profile.candidateName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><b>{profile.candidateName}</b><small>{profile.headline || role}</small></div></div>
-        <div className="session-info"><p>YOUR SESSION</p><strong>{interviewType}</strong><span>{difficulty} · {sessionQuestions.length} resume-matched questions</span></div>
-        <ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => { setQuestionIndex(index); setAnswer(""); setFeedback(null); setEvaluationError(""); setShowSuggested(false); }}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""}` : "Not started"}</small></div></button></li>)}</ol>
+        <div className="session-info"><p>YOUR SESSION</p><strong>{practiceMode}</strong><span>{difficulty} · {sessionQuestions.length} resume-matched questions</span><i><i style={{ width: `${(completedQuestions / sessionQuestions.length) * 100}%` }} /></i></div>
+        <ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => selectQuestion(index)}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""} · ${attempts[item.id].at(-1)?.score}` : "Not started"}</small></div></button></li>)}</ol>
+        <button className="report-link" onClick={() => setScreen("report")}>View readiness report <span>{averageScore || "—"}</span></button>
         <button className="sidebar-link" onClick={() => setScreen("setup")}>← Edit session settings</button>
       </aside>
 
       <section className="practice-area">
-        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><span className="difficulty-pill">{question.level}</span><span className="ai-badge">✦ AI interviewer</span></div></header>
-        <article className="question-card"><div className="question-meta"><span>{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><p className="coach-note"><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</p></article>
+        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}>Report {averageScore || "—"}</button><span className="difficulty-pill">{question.level}</span><span className="ai-badge">✦ AI interviewer</span></div></header>
+        <article className="question-card"><div className="question-meta"><span>{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><details className="intent-note"><summary>Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b>Check these cases</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
 
         <section className="answer-card">
-          <div className="answer-heading"><div><h2>Your answer</h2><p>Write as you would speak. The coach looks for useful detail, not length.</p></div><span className={answer.length > 35 ? "word-good" : ""}>{cleanWords(answer).length} words</span></div>
-          <textarea value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder="Start with the situation or your responsibility. Then explain what you did and what happened..." aria-label="Your interview answer" />
+          <div className="answer-heading"><div><h2>{question.kind === "coding" ? "Your solution" : "Your answer"}</h2><p>{question.kind === "coding" ? "Write JavaScript, run it, then explain your choices." : "Speak or type naturally. The coach looks for useful detail, not length."}</p></div><span className={answerReady ? "word-good" : ""}>{question.kind === "coding" ? `${answer.split("\n").length} lines` : `${cleanWords(answer).length} words`}</span></div>
+          {question.kind !== "coding" && <div className="voice-toolbar"><button className={`voice-button ${isListening ? "is-live" : ""}`} disabled={!speechSupported} onClick={toggleVoice}>{isListening ? "■ Stop recording" : "● Answer with voice"}</button><div className={`answer-timer ${secondsLeft <= 15 ? "time-low" : ""}`}><strong>{String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</strong><span>90-sec target</span></div><span>{speechSupported ? `${fillerCount} filler word${fillerCount === 1 ? "" : "s"}` : "Voice unavailable — type your answer"}</span></div>}
+          <textarea className={question.kind === "coding" ? "code-editor" : ""} value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder={question.kind === "coding" ? "Write your JavaScript solution here…" : "Start with the situation or your responsibility. Then explain what you did and what happened..."} aria-label={question.kind === "coding" ? "Your code solution" : "Your interview answer"} spellCheck={question.kind !== "coding"} />
+          {question.kind === "coding" && <div className="code-runner"><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}>Run JavaScript</button><pre aria-live="polite">{codeOutput || "Console output will appear here."}</pre></div>}
           {!feedback && <div className="answer-help">
             <button className="help-button" onClick={() => setShowSuggested((current) => !current)}>{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
             {showSuggested && <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>}
           </div>}
-          {!feedback && <div className="answer-footer"><span>{answer.trim().length < 35 ? "Write at least a few complete sentences to get feedback." : "Ready when you are."}</span><button className="primary-button" disabled={answer.trim().length < 35 || isEvaluating} onClick={submitAnswer}>{isEvaluating ? "Gemini is reviewing…" : "Get coaching feedback"} <span>→</span></button></div>}
+          {!feedback && <div className="answer-footer"><span>{!answerReady ? (question.kind === "coding" ? "Add a complete solution before requesting feedback." : "Give a few complete sentences to get feedback.") : "Ready when you are."}</span><button className="primary-button" disabled={!answerReady || isEvaluating} onClick={submitAnswer}>{isEvaluating ? "AI coach is reviewing…" : "Get coaching feedback"} <span>→</span></button></div>}
           {evaluationError && <p className="inline-warning" role="status">{evaluationError}</p>}
         </section>
 
@@ -433,11 +650,12 @@ export default function Home() {
           <div className="feedback-grid"><div className="feedback-box success"><h3>What worked</h3><ul>{feedback.worked.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="feedback-box improve"><h3>Make it stronger</h3><ul>{feedback.improve.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
           <details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>See a stronger answer <span>⌄</span></summary><div><p>{feedback.betterAnswer}</p><small>Use this as a structure guide. Keep only details you can truthfully defend.</small></div></details>
           <div className="follow-up-card"><p className="eyebrow">THE INTERVIEWER CONTINUES</p><h3>{feedback.followUp}</h3><div>{feedback.relatedTopics.map((topic) => <span key={topic}>{topic}</span>)}</div></div>
-          <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}>↻ Improve this answer</button><button className="primary-button" onClick={nextQuestion}>Next question <span>→</span></button></div>
+          <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}>↻ Improve this answer</button><button className="secondary-button" onClick={practiseFollowUp}>Answer follow-up</button><button className="primary-button" onClick={nextQuestion}>Next question <span>→</span></button></div>
         </section>}
       </section>
 
       <aside className="coach-rail"><div className="rail-card"><span className="rail-icon">✦</span><p className="eyebrow">RESUME SNAPSHOT</p><h3>{profile.headline}</h3><p>{profile.summary}</p></div><div className="rail-card"><p className="eyebrow">LISTEN FOR</p><ul>{question.expected.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card"><p className="eyebrow">TOPICS TO REVISE</p><ul>{profile.focusTopics.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card follow-up"><p className="eyebrow">LIKELY FOLLOW-UP</p><p>{question.followUp}</p></div></aside>
+      <nav className="mobile-bottom-nav" aria-label="Practice navigation"><button onClick={() => selectQuestion(Math.max(0, questionIndex - 1))}>← Previous</button><button className="active">{questionIndex + 1} / {sessionQuestions.length}</button><button onClick={nextQuestion}>Next →</button><button onClick={() => setScreen("report")}>Report</button></nav>
     </main>
   );
 }
