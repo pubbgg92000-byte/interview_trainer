@@ -49,6 +49,9 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(page, /READINESS REPORT/);
   assert.match(page, /Why the interviewer asks this/);
   assert.match(page, /resume-coach-session-v2/);
+  assert.match(page, /Reset &amp; start fresh/);
+  assert.match(page, /screen, questions: sessionQuestions, profile, attempts/);
+  assert.match(route, /codingFallback/);
   assert.match(route, /process\.env\.GEMINI_API_KEY/);
   assert.match(route, /process\.env\.OPENROUTER_API_KEY/);
   assert.match(route, /openrouter\/free/);
@@ -61,4 +64,5 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(manifest, /display: "standalone"/);
   assert.match(serviceWorker, /interview-coach-v2/);
   await access(new URL("../public/og.jpg", import.meta.url));
+  await access(new URL("../app/favicon.ico/route.ts", import.meta.url));
 });

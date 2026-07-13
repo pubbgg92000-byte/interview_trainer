@@ -166,6 +166,70 @@ function cleanStringArray(value: unknown, limit: number) {
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, limit);
 }
 
+function inferFallbackRole(requestedRole: string, resumeText: string) {
+  if (requestedRole) return requestedRole;
+  if (/\b(data|sql|python|analytics|machine learning)\b/i.test(resumeText)) return "Data Engineer";
+  if (/\b(java|spring|node\.js|backend|microservice|database)\b/i.test(resumeText)) return "Software Engineer";
+  return "Frontend Developer";
+}
+
+function codingFallback(questionCount: number, requestedRole: string, resumeText: string, difficulty: string, context: { company: string; interviewStage: string; interviewDate: string }) {
+  const role = inferFallbackRole(requestedRole, resumeText);
+  const topics = [
+    { name: "Array transformation", skill: "JavaScript", starter: "function transformItems(items) {\n  // Return a new transformed array\n}\n", expected: ["immutability", "map", "edge cases", "complexity"], tests: ["empty array", "duplicate values", "invalid item"] },
+    { name: "Asynchronous requests", skill: "async JavaScript", starter: "async function loadData(url) {\n  // Fetch, validate, and return data\n}\n", expected: ["async/await", "response validation", "error handling", "loading state"], tests: ["successful response", "non-200 response", "network failure"] },
+    { name: "State updates", skill: "React state", starter: "function updateItems(items, id, value) {\n  // Update one item without mutation\n}\n", expected: ["immutable update", "stable identity", "functional state", "rendering"], tests: ["matching id", "missing id", "unchanged items"] },
+    { name: "Search and filtering", skill: "JavaScript", starter: "function filterResults(items, query) {\n  // Return matching results\n}\n", expected: ["normalization", "filter", "empty query", "performance"], tests: ["case-insensitive match", "empty query", "no matches"] },
+    { name: "Form validation", skill: "frontend forms", starter: "function validateForm(values) {\n  const errors = {};\n  // Add field errors\n  return errors;\n}\n", expected: ["validation rules", "clear errors", "accessibility", "edge cases"], tests: ["valid values", "missing required field", "invalid email"] },
+    { name: "Data caching", skill: "frontend architecture", starter: "function createCache(ttlMs) {\n  // Return get and set methods\n}\n", expected: ["cache key", "expiration", "invalidation", "memory"], tests: ["cache hit", "expired entry", "missing key"] },
+    { name: "Debounced input", skill: "browser performance", starter: "function debounce(callback, delay) {\n  // Return a debounced function\n}\n", expected: ["closure", "timer cleanup", "arguments", "this binding"], tests: ["rapid calls", "latest arguments", "delayed invocation"] },
+    { name: "Nested data", skill: "JavaScript", starter: "function flattenTree(nodes) {\n  // Flatten nodes and their children\n}\n", expected: ["recursion", "base case", "ordering", "complexity"], tests: ["empty tree", "deep nesting", "missing children"] },
+    { name: "Retry handling", skill: "API reliability", starter: "async function withRetry(operation, attempts) {\n  // Retry failures safely\n}\n", expected: ["retry limit", "backoff", "error propagation", "idempotency"], tests: ["first attempt succeeds", "later attempt succeeds", "all attempts fail"] },
+    { name: "Memoized calculation", skill: "performance", starter: "function memoize(fn) {\n  // Cache results by arguments\n}\n", expected: ["cache", "arguments", "referential equality", "memory trade-off"], tests: ["repeated arguments", "different arguments", "falsy result"] },
+  ];
+  const taskTypes = [
+    (topic: (typeof topics)[number]) => `Implement a reliable ${topic.name.toLowerCase()} utility. Explain your assumptions and complexity.`,
+    (topic: (typeof topics)[number]) => `Debug the starter for ${topic.name.toLowerCase()}. Identify likely failure cases, then provide corrected code.`,
+    (topic: (typeof topics)[number]) => `Refactor a solution for ${topic.name.toLowerCase()} so it is readable, testable, and handles edge cases.`,
+    (topic: (typeof topics)[number]) => `Write a solution and a focused test strategy for ${topic.name.toLowerCase()}.`,
+    (topic: (typeof topics)[number]) => `Solve the ${topic.name.toLowerCase()} problem, then explain one alternative and its trade-offs.`,
+  ];
+  const questions = Array.from({ length: questionCount }, (_, index) => {
+    const topic = topics[index % topics.length];
+    const taskType = taskTypes[Math.floor(index / topics.length) % taskTypes.length];
+    return {
+      id: index + 1,
+      category: `Coding · ${topic.skill}`,
+      level: difficulty === "Beginner" || difficulty === "Advanced" ? difficulty : "Intermediate",
+      prompt: taskType(topic),
+      reference: `${role} coding fundamentals`,
+      tested: [topic.skill, "problem solving", "testing", "communication"],
+      expected: topic.expected,
+      suggested: `Clarify the inputs and outputs, implement the smallest correct solution, test ${topic.tests.join(", ")}, and explain complexity and trade-offs.`,
+      followUp: `How would you adapt this ${topic.name.toLowerCase()} solution for production scale?`,
+      kind: "coding" as const,
+      starterCode: topic.starter,
+      testCases: topic.tests,
+      solutionOutline: `Define the contract, handle ${topic.tests.join(", ")}, keep the implementation readable, and discuss complexity.`,
+    };
+  });
+  return NextResponse.json({
+    questions,
+    context,
+    fallback: true,
+    profile: {
+      candidateName: "Candidate",
+      headline: role,
+      summary: `A resilient local coding practice session for ${role}. AI personalization can resume automatically when the free providers are available.`,
+      strengths: ["Hands-on problem solving", "Technical communication", "Testing mindset"],
+      focusTopics: ["JavaScript fundamentals", "Error handling", "Testing", "Performance"],
+      jobMatch: [role, "Coding fundamentals"],
+      missingSkills: ["Add the job description to identify role-specific gaps"],
+      resumeRisks: ["Connect each solution to a real project example from your resume"],
+    },
+  });
+}
+
 async function createSession(form: FormData, geminiKey: string | undefined, openRouterKey: string | undefined) {
   const requestedRole = String(form.get("role") || "").trim().slice(0, 120);
   const role = requestedRole || "the strongest matching role inferred from the resume";
@@ -226,6 +290,7 @@ ${resumeText}`;
 
   const generated = await generateWithProviders(geminiKey, openRouterKey, parts, questionCount >= 40 ? 24576 : 16384);
   if (!generated.ok) {
+    if (practiceMode === "Coding lab") return codingFallback(questionCount, requestedRole, resumeText, difficulty, { company, interviewStage, interviewDate });
     const message = generated.status === 429
       ? "The free AI providers are busy right now. Please wait a moment and try again."
       : "The AI providers could not create the session right now. Please try again.";
@@ -271,6 +336,7 @@ ${resumeText}`;
       },
     });
   } catch {
+    if (practiceMode === "Coding lab") return codingFallback(questionCount, requestedRole, resumeText, difficulty, { company, interviewStage, interviewDate });
     return NextResponse.json({ error: "The AI provider returned an unexpected session. Please try again." }, { status: 502 });
   }
 }

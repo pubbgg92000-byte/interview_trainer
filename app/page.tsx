@@ -24,6 +24,7 @@ import {
   Square,
   Target,
   Timer,
+  Trash2,
   TrendingUp,
   UploadCloud,
   UserRound,
@@ -70,6 +71,7 @@ type SpeechRecognitionLike = {
 };
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+type Screen = "home" | "setup" | "practice" | "report";
 
 type CoachResult = {
   scores: Record<(typeof scoreLabels)[number][0], number>;
@@ -168,6 +170,28 @@ const defaultProfile: Profile = {
 const STORAGE_KEY = "resume-coach-session-v2";
 const fillerWords = ["um", "uh", "like", "basically", "actually", "literally", "you know"];
 
+type StoredSession = {
+  hasCreatedSession?: boolean;
+  screen?: Screen;
+  questions?: Question[];
+  profile?: Profile;
+  attempts?: Record<number, Attempt[]>;
+  questionIndex?: number;
+  answer?: string;
+  feedback?: CoachResult | null;
+  showSuggested?: boolean;
+  role?: string;
+  company?: string;
+  interviewStage?: string;
+  interviewDate?: string;
+  jobDescription?: string;
+  focusAreas?: string;
+  interviewType?: string;
+  practiceMode?: string;
+  difficulty?: string;
+  questionCount?: string;
+};
+
 const waitingTips = [
   "A clear answer is better than a long answer. Lead with what you personally did.",
   "For project questions, use: context, responsibility, action, and result.",
@@ -178,6 +202,12 @@ const waitingTips = [
 
 function cleanWords(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+}
+
+function defaultInterviewDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 2);
+  return date.toISOString().slice(0, 10);
 }
 
 function evaluate(question: Question, answer: string) {
@@ -219,11 +249,11 @@ function evaluate(question: Question, answer: string) {
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<"home" | "setup" | "practice" | "report">("setup");
+  const [screen, setScreen] = useState<Screen>("setup");
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [interviewStage, setInterviewStage] = useState("Technical round");
-  const [interviewDate, setInterviewDate] = useState(() => new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10));
+  const [interviewDate, setInterviewDate] = useState(defaultInterviewDate);
   const [jobDescription, setJobDescription] = useState("");
   const [focusAreas, setFocusAreas] = useState("");
   const [interviewType, setInterviewType] = useState("Mixed interview");
@@ -254,9 +284,11 @@ export default function Home() {
   const [speechSupported, setSpeechSupported] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [codeOutput, setCodeOutput] = useState("");
+  const [hasCreatedSession, setHasCreatedSession] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const question = sessionQuestions[questionIndex];
+  const safeQuestionIndex = Math.min(Math.max(questionIndex, 0), Math.max(sessionQuestions.length - 1, 0));
+  const question = sessionQuestions[safeQuestionIndex] || defaultQuestions[0];
   const localResult = useMemo(() => evaluate(question, answer), [answer, question]);
   const questionAttempts = attempts[question.id] ?? [];
   const completedQuestions = Object.values(attempts).filter((items) => items.length > 0).length;
@@ -272,7 +304,7 @@ export default function Home() {
   }, [isGenerating]);
 
   useEffect(() => {
-    let restored: { questions?: Question[]; profile?: Profile; attempts?: Record<number, Attempt[]>; questionIndex?: number; role?: string; practiceMode?: string } | null = null;
+    let restored: StoredSession | null = null;
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) restored = JSON.parse(saved);
@@ -280,13 +312,28 @@ export default function Home() {
       window.localStorage.removeItem(STORAGE_KEY);
     }
     window.queueMicrotask(() => {
+      const restoredHasSession = Boolean(restored?.hasCreatedSession || restored?.screen === "practice" || restored?.screen === "report");
       if (restored?.questions?.length) setSessionQuestions(restored.questions);
       if (restored?.profile) setProfile(restored.profile);
       if (restored?.attempts) setAttempts(restored.attempts);
-      if (typeof restored?.questionIndex === "number") setQuestionIndex(restored.questionIndex);
-      if (restored?.role) setRole(restored.role);
+      if (typeof restored?.questionIndex === "number") setQuestionIndex(Math.min(Math.max(restored.questionIndex, 0), Math.max((restored.questions?.length || defaultQuestions.length) - 1, 0)));
+      if (typeof restored?.answer === "string") setAnswer(restored.answer);
+      if (restored?.feedback) setFeedback(restored.feedback);
+      if (typeof restored?.showSuggested === "boolean") setShowSuggested(restored.showSuggested);
+      if (typeof restored?.role === "string") setRole(restored.role);
+      if (typeof restored?.company === "string") setCompany(restored.company);
+      if (restored?.interviewStage) setInterviewStage(restored.interviewStage);
+      if (restored?.interviewDate) setInterviewDate(restored.interviewDate);
+      if (typeof restored?.jobDescription === "string") setJobDescription(restored.jobDescription);
+      if (typeof restored?.focusAreas === "string") setFocusAreas(restored.focusAreas);
+      if (restored?.interviewType) setInterviewType(restored.interviewType);
       if (restored?.practiceMode) setPracticeMode(restored.practiceMode);
-      if (restored) setSaveNotice("Previous progress restored on this device.");
+      if (restored?.difficulty) setDifficulty(restored.difficulty);
+      if (restored?.questionCount) setQuestionCount(restored.questionCount);
+      setHasCreatedSession(restoredHasSession);
+      if ((restored?.screen === "practice" || restored?.screen === "report") && restoredHasSession) setScreen(restored.screen);
+      else if (restored?.screen === "setup") setScreen("setup");
+      if (restoredHasSession) setSaveNotice("Previous progress restored on this device.");
       setIsHydrated(true);
     });
 
@@ -301,8 +348,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!isHydrated || !sessionQuestions.length) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ questions: sessionQuestions, profile, attempts, questionIndex, role, practiceMode }));
-  }, [attempts, isHydrated, practiceMode, profile, questionIndex, role, sessionQuestions]);
+    const stored: StoredSession = { hasCreatedSession, screen, questions: sessionQuestions, profile, attempts, questionIndex: safeQuestionIndex, answer, feedback, showSuggested, role, company, interviewStage, interviewDate, jobDescription, focusAreas, interviewType, practiceMode, difficulty, questionCount };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  }, [answer, attempts, company, difficulty, feedback, focusAreas, hasCreatedSession, interviewDate, interviewStage, interviewType, isHydrated, jobDescription, practiceMode, profile, questionCount, questionIndex, role, safeQuestionIndex, screen, sessionQuestions, showSuggested]);
 
   useEffect(() => {
     if (!timerRunning) return;
@@ -440,11 +488,12 @@ export default function Home() {
       setAnswer(data.questions[0]?.kind === "coding" ? data.questions[0]?.starterCode || "" : "");
       setAttempts({});
       setFeedback(null);
+      setHasCreatedSession(true);
       setSaveNotice("Session saved automatically on this device.");
       setScreen("practice");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Question generation failed. Please try again.");
-      setSessionQuestions(defaultQuestions);
+      setScreen("setup");
     } finally {
       setIsGenerating(false);
     }
@@ -521,11 +570,40 @@ export default function Home() {
     resetAnswerTools();
   }
 
-  function clearSavedSession() {
+  function resetAndStartFresh() {
+    resetAnswerTools();
     window.localStorage.removeItem(STORAGE_KEY);
+    setScreen("setup");
+    setRole("");
+    setCompany("");
+    setInterviewStage("Technical round");
+    setInterviewDate(defaultInterviewDate());
+    setJobDescription("");
+    setFocusAreas("");
+    setInterviewType("Mixed interview");
+    setPracticeMode("Mock interview");
+    setDifficulty("Intermediate");
+    setQuestionCount("30");
+    setResumeName("");
+    setResumeText("");
+    setResumeFile(null);
+    if (inputRef.current) inputRef.current.value = "";
+    setSessionQuestions(defaultQuestions);
+    setProfile(defaultProfile);
     setAttempts({});
     setQuestionIndex(0);
-    setSaveNotice("Saved progress cleared.");
+    setAnswer("");
+    setFeedback(null);
+    setShowSuggested(false);
+    setGenerationError("");
+    setEvaluationError("");
+    setCodeOutput("");
+    setHasCreatedSession(false);
+    setSaveNotice("Previous data cleared. Upload a resume to start fresh.");
+  }
+
+  function requestReset() {
+    if (window.confirm("Reset everything? This clears all saved questions, answers, scores, settings, and progress on this device.")) resetAndStartFresh();
   }
 
   async function installApp() {
@@ -569,7 +647,7 @@ export default function Home() {
       <main className="setup-shell">
         <nav className="topbar">
           <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
-          <div className="setup-nav-actions">{installPrompt && <button className="install-button" onClick={installApp}><Download size={14} aria-hidden="true" /> Install app</button>}<span className="step-label">SETUP <b>01 / 02</b></span></div>
+          <div className="setup-nav-actions">{hasCreatedSession && <button className="reset-button" onClick={requestReset}><Trash2 size={14} aria-hidden="true" /> Reset</button>}{installPrompt && <button className="install-button" onClick={installApp}><Download size={14} aria-hidden="true" /> Install app</button>}<span className="step-label">SETUP <b>01 / 02</b></span></div>
         </nav>
         <section className="setup-grid">
           <div className="setup-copy">
@@ -637,7 +715,7 @@ export default function Home() {
             <section className="report-card"><span className="card-icon coral"><ShieldCheck size={19} aria-hidden="true" /></span><p className="eyebrow">RESUME CLAIM CHECK</p><h2>Be ready to defend</h2><ul>{(profile.resumeRisks?.length ? profile.resumeRisks : sessionQuestions.slice(0, 4).map((item) => `${item.reference}: explain your exact contribution and result.`)).map((item) => <li key={item}>{item}</li>)}</ul></section>
             <section className="report-card"><span className="card-icon teal"><Target size={19} aria-hidden="true" /></span><p className="eyebrow">JOB MATCH</p><h2>Strengths and gaps</h2><h3>Matches</h3><div className="report-tags">{(profile.jobMatch || profile.strengths).map((item) => <span key={item}>{item}</span>)}</div><h3>Revise or clarify</h3><div className="report-tags warning">{(profile.missingSkills || profile.focusTopics).map((item) => <span key={item}>{item}</span>)}</div></section>
           </div>
-          <div className="report-actions"><button className="secondary-button" onClick={clearSavedSession}><RotateCcw size={15} aria-hidden="true" /> Clear saved progress</button><button className="primary-button" onClick={() => setScreen("practice")}>Continue practising <ArrowRight size={16} aria-hidden="true" /></button></div>
+          <div className="report-actions"><button className="reset-button" onClick={requestReset}><Trash2 size={15} aria-hidden="true" /> Reset &amp; start fresh</button><button className="primary-button" onClick={() => setScreen("practice")}>Continue practising <ArrowRight size={16} aria-hidden="true" /></button></div>
         </section>
       </main>
     );
@@ -652,6 +730,7 @@ export default function Home() {
         <ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => selectQuestion(index)}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""} · ${attempts[item.id].at(-1)?.score}` : "Not started"}</small></div></button></li>)}</ol>
         <button className="report-link" onClick={() => setScreen("report")}><BarChart3 size={16} aria-hidden="true" /> View readiness report <span>{averageScore || "—"}</span></button>
         <button className="sidebar-link" onClick={() => setScreen("setup")}><ArrowLeft size={14} aria-hidden="true" /> Edit session settings</button>
+        <button className="sidebar-link reset-link" onClick={requestReset}><Trash2 size={14} aria-hidden="true" /> Reset &amp; start fresh</button>
       </aside>
 
       <section className="practice-area">
