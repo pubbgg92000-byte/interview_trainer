@@ -1,58 +1,41 @@
-# 🎯 Interview Trainer
+# Resume Interview Coach
 
-An AI-powered interview preparation tool to help you practice, improve, and ace your interviews with confidence.
+A focused interview-practice web app that turns a candidate's resume into realistic interview questions and coaching feedback.
 
-## 📌 Overview
+## What it does
 
-Interview Trainer is a smart, interactive platform that simulates real interview scenarios. It provides personalized feedback, tracks your progress, and helps you build the skills needed to land your dream job.
+- Upload a PDF, DOCX, or TXT resume and select a target role.
+- Choose interview type and difficulty.
+- Practise personalised technical, project, behavioural, and introduction questions.
+- Receive a 100-point coaching score with feedback on relevance, technical accuracy, resume consistency, structure, communication, and evidence.
+- Review expected points, likely follow-up questions, and a hidden suggested answer.
+- Retry questions and track improvement across attempts.
 
-## ✨ Features
+Gemini generates a fresh six-question interview session from the uploaded resume. The app keeps the API key server-side; it is never sent to the browser or committed to the repository.
 
-- 🤖 **AI-Powered Questions** — Dynamically generated questions tailored to your target role and experience level
-- 🗣️ **Mock Interviews** — Simulate real interview environments with timed responses
-- 📊 **Performance Analytics** — Track your progress and identify areas for improvement
-- 💬 **Instant Feedback** — Get detailed feedback on your answers in real time
-- 🗂️ **Multiple Domains** — Supports technical, behavioral, and HR interview categories
-- 📝 **Answer History** — Review past answers and compare improvements over time
+## Run locally
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js >= 18
-- npm or yarn
-
-### Installation
+Requirements: Node.js 22+ and pnpm.
 
 ```bash
-git clone https://github.com/pubbgg92000-byte/interview_trainer.git
-cd interview_trainer
-npm install
+pnpm install
+pnpm run dev
 ```
 
-### Running the App
+Open [http://localhost:3000](http://localhost:3000).
+
+## Production build
 
 ```bash
-npm run dev
+pnpm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+## Tech stack
 
-## 🛠️ Tech Stack
+- React, Next.js, TypeScript
+- Vinext / Vite and Cloudflare-compatible deployment
+- Tailwind CSS
 
-- **Frontend** — React / Next.js
-- **Backend** — Node.js
-- **AI** — Google Gemini / OpenAI
-- **Database** — PostgreSQL / Firebase
+## Configure Gemini locally
 
-## 🤝 Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-> Built with ❤️ to help candidates prepare smarter, not harder.
+Create a local `.env` file containing `GEMINI_API_KEY=your_key`. Do not commit this file. The deployed application uses a protected server-side environment variable instead.
