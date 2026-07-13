@@ -163,7 +163,8 @@ function cleanStringArray(value: unknown, limit: number) {
 }
 
 async function createSession(form: FormData, geminiKey: string | undefined, openRouterKey: string | undefined) {
-  const role = String(form.get("role") || "Frontend Developer").slice(0, 120);
+  const requestedRole = String(form.get("role") || "").trim().slice(0, 120);
+  const role = requestedRole || "the strongest matching role inferred from the resume";
   const company = String(form.get("company") || "Not provided").slice(0, 160);
   const interviewStage = String(form.get("interviewStage") || "Not provided").slice(0, 120);
   const interviewDate = String(form.get("interviewDate") || "Not provided").slice(0, 40);
@@ -183,7 +184,7 @@ async function createSession(form: FormData, geminiKey: string | undefined, open
   const prompt = `You are a rigorous but encouraging interview coach. Analyse the supplied resume and interview context, then create exactly ${questionCount} realistic ${difficulty.toLowerCase()} ${interviewType.toLowerCase()} questions for this opportunity.
 
 Interview context:
-- Target role: ${role}
+- Target role: ${requestedRole || "Infer the candidate's strongest matching role from the resume and use it consistently."}
 - Company: ${company}
 - Interview stage: ${interviewStage}
 - Interview date: ${interviewDate}

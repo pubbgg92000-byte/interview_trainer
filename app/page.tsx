@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Question = {
   id: number;
@@ -167,7 +167,7 @@ function evaluate(question: Question, answer: string) {
 
 export default function Home() {
   const [screen, setScreen] = useState<"home" | "setup" | "practice">("setup");
-  const [role, setRole] = useState("Frontend Developer");
+  const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [interviewStage, setInterviewStage] = useState("Technical round");
   const [interviewDate, setInterviewDate] = useState("2026-07-15");
@@ -179,6 +179,7 @@ export default function Home() {
   const [resumeName, setResumeName] = useState("");
   const [resumeText, setResumeText] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [isDraggingResume, setIsDraggingResume] = useState(false);
   const [sessionQuestions, setSessionQuestions] = useState<Question[]>(defaultQuestions);
   const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -202,23 +203,41 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [isGenerating]);
 
-  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  function acceptResume(file: File) {
+    if (!/\.(pdf|docx|txt)$/i.test(file.name)) {
+      setGenerationError("Please choose a PDF, DOCX, or TXT resume.");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setGenerationError("Please choose a resume smaller than 4MB.");
+      return;
+    }
     setResumeName(file.name);
     setResumeFile(file);
+    setResumeText("");
     setGenerationError("");
     if (file.type === "text/plain" || file.name.toLowerCase().endsWith(".txt")) {
       file.text().then(setResumeText);
-    } else {
-      setResumeText("Resume file ready for analysis. This demo uses the personalised frontend-developer interview set.");
     }
+  }
+
+  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) acceptResume(file);
+  }
+
+  function onResumeDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingResume(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) acceptResume(file);
   }
 
   function loadDemoProfile() {
     setResumeName("Arvind_Mangalarapu_Frontend_Resume.pdf");
     setResumeText("Frontend developer with Svelte, Tailwind CSS, REST APIs, n8n, Cloudflare and Selenium experience.");
     setResumeFile(null);
+    setRole("");
     setGenerationError("");
   }
 
@@ -228,7 +247,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("action", "session");
-      formData.append("resumeText", resumeText || "Frontend developer seeking a role.");
+      formData.append("resumeText", resumeText);
       formData.append("role", role);
       formData.append("company", company);
       formData.append("interviewStage", interviewStage);
@@ -243,7 +262,10 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok || !Array.isArray(data.questions)) throw new Error(data.error || "Question generation failed.");
       setSessionQuestions(data.questions);
-      if (data.profile) setProfile(data.profile);
+      if (data.profile) {
+        setProfile(data.profile);
+        if (!role.trim() && data.profile.headline) setRole(data.profile.headline);
+      }
       setQuestionIndex(0);
       setAttempts({});
       setFeedback(null);
@@ -342,12 +364,23 @@ export default function Home() {
             <div className="profile-strip"><span className="initials">CV</span><div><b>{resumeName ? "Resume ready to analyse" : "Start with your resume"}</b><small>{resumeName || "PDF, DOCX or TXT, up to 4MB"}</small></div></div>
           </div>
           <div className="setup-card">
-            <div className={`dropzone ${resumeName ? "has-file" : ""}`} onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && inputRef.current?.click()}>
+            <div
+              className={`dropzone ${resumeName ? "has-file" : ""} ${isDraggingResume ? "is-dragging" : ""}`}
+              onClick={() => inputRef.current?.click()}
+              onDragEnter={(event) => { event.preventDefault(); setIsDraggingResume(true); }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={() => setIsDraggingResume(false)}
+              onDrop={onResumeDrop}
+              role="button"
+              aria-label="Drop your resume here or click to browse"
+              tabIndex={0}
+              onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && inputRef.current?.click()}
+            >
               <input ref={inputRef} type="file" accept=".pdf,.docx,.txt,application/pdf,text/plain" onChange={onFileChange} />
-              <span className="upload-icon">↑</span><b>{resumeName || "Upload your resume"}</b><small>{resumeName ? "Ready for personalised analysis" : "PDF, DOCX or TXT"}</small>
+              <span className="upload-icon">↑</span><b>{resumeName || (isDraggingResume ? "Drop it here" : "Drag and drop your resume")}</b><small>{resumeName ? "Ready for personalised analysis" : "or click to browse · PDF, DOCX or TXT"}</small>
             </div>
             <button className="demo-link" onClick={loadDemoProfile}>Use the frontend developer sample instead</button>
-            <label>Target role<input value={role} onChange={(event) => setRole(event.target.value)} placeholder="e.g. Product Manager" /></label>
+            <label>Target role <span className="optional-tag">AUTO</span><input value={role} onChange={(event) => setRole(event.target.value)} placeholder="Automatically detected from your resume" /><small className="field-hint">Leave blank to let the coach identify your strongest matching role. Enter a role only to override it.</small></label>
             <div className="option-grid">
               <label>Interview type<select value={interviewType} onChange={(event) => setInterviewType(event.target.value)}><option>Mixed interview</option><option>Technical interview</option><option>Project-based interview</option><option>Behavioural interview</option><option>Rapid-fire interview</option></select></label>
               <label>Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label>
@@ -361,7 +394,7 @@ export default function Home() {
             <label>Job description (recommended)<textarea className="context-textarea" value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="Paste the job description so questions match what the employer needs." /></label>
             <label>What do you want to improve?<textarea className="context-textarea short" value={focusAreas} onChange={(event) => setFocusAreas(event.target.value)} placeholder="e.g. JavaScript fundamentals, explaining my projects, confidence, career gap" /></label>
             {generationError && <p className="form-error" role="alert">{generationError}</p>}
-            <button className="primary-button full-button" disabled={!resumeName || !role.trim()} onClick={beginPractice}>Create practice session <span>→</span></button>
+            <button className="primary-button full-button" disabled={!resumeName} onClick={beginPractice}>Create practice session <span>→</span></button>
             <p className="secure-note">Your AI keys stay on the server. Resume content is only sent to create this session.</p>
           </div>
         </section>

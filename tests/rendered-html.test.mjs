@@ -22,7 +22,7 @@ test("server-renders the interview coach setup page", async () => {
   const html = await response.text();
   assert.match(html, /<title>Resume Interview Coach<\/title>/i);
   assert.match(html, /Bring the resume\. We’ll find the questions behind it/i);
-  assert.match(html, /Upload your resume/i);
+  assert.match(html, /Drag and drop your resume/i);
   assert.match(html, /Question bank size/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
@@ -37,6 +37,8 @@ test("keeps Gemini private and includes the full coaching flow", async () => {
   assert.match(page, /Job description \(recommended\)/);
   assert.match(page, /What do you want to improve\?/);
   assert.match(page, /50 maximum-coverage questions/);
+  assert.match(page, /Drag and drop your resume/);
+  assert.match(page, /Automatically detected from your resume/);
   assert.match(page, /Get coaching feedback/);
   assert.match(page, /I don’t know — show answer guide/);
   assert.match(page, /THE INTERVIEWER CONTINUES/);
