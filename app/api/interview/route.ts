@@ -53,7 +53,8 @@ function outputText(result: unknown) {
   return data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
 }
 
-async function generateWithGemini(apiKey: string, parts: Array<Record<string, unknown>>, maxOutputTokens = 4096) {
+async function generateWithGemini(apiKey: string | undefined, parts: Array<Record<string, unknown>>, maxOutputTokens = 4096) {
+  if (!apiKey) return { ok: false as const, status: 503, retryAfter: null, provider: "gemini" };
   let lastFailure = { status: 502, retryAfter: null as string | null, model: MODELS[0] as string };
   for (const model of MODELS) {
     const response = await fetch(
@@ -73,7 +74,7 @@ async function generateWithGemini(apiKey: string, parts: Array<Record<string, un
     );
 
     if (response.ok) {
-      return { ok: true as const, text: outputText(await response.json()), model };
+      return { ok: true as const, text: outputText(await response.json()), model, provider: "gemini" };
     }
 
     lastFailure = { status: response.status, retryAfter: response.headers.get("retry-after"), model };
@@ -83,12 +84,85 @@ async function generateWithGemini(apiKey: string, parts: Array<Record<string, un
   return { ok: false as const, ...lastFailure };
 }
 
+async function generateWithOpenRouter(
+  apiKey: string | undefined,
+  parts: Array<Record<string, unknown>>,
+  maxOutputTokens: number,
+) {
+  if (!apiKey) return { ok: false as const, status: 503, retryAfter: null, provider: "openrouter" };
+
+  const content: Array<Record<string, unknown>> = [];
+  for (const part of parts) {
+    if (typeof part.text === "string") content.push({ type: "text", text: part.text });
+    const inline = part.inlineData as { mimeType?: string; data?: string } | undefined;
+    if (inline?.data && inline.mimeType === "application/pdf") {
+      content.push({
+        type: "file",
+        file: {
+          filename: "resume.pdf",
+          file_data: `data:application/pdf;base64,${inline.data}`,
+        },
+      });
+    }
+  }
+
+  const hasPdf = content.some((part) => part.type === "file");
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Resume Interview Coach",
+    },
+    body: JSON.stringify({
+      model: "openrouter/free",
+      messages: [{ role: "user", content }],
+      response_format: { type: "json_object" },
+      temperature: 0.25,
+      max_tokens: maxOutputTokens,
+      ...(hasPdf
+        ? { plugins: [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }] }
+        : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const failure = {
+      ok: false as const,
+      status: response.status,
+      retryAfter: response.headers.get("retry-after"),
+      provider: "openrouter",
+    };
+    console.warn("OpenRouter request failed", failure);
+    return failure;
+  }
+
+  const result = await response.json() as {
+    model?: string;
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = result.choices?.[0]?.message?.content || "";
+  if (!text) return { ok: false as const, status: 502, retryAfter: null, provider: "openrouter" };
+  return { ok: true as const, text, model: result.model || "openrouter/free", provider: "openrouter" };
+}
+
+async function generateWithProviders(
+  geminiKey: string | undefined,
+  openRouterKey: string | undefined,
+  parts: Array<Record<string, unknown>>,
+  maxOutputTokens: number,
+) {
+  const gemini = await generateWithGemini(geminiKey, parts, maxOutputTokens);
+  if (gemini.ok) return gemini;
+  return generateWithOpenRouter(openRouterKey, parts, maxOutputTokens);
+}
+
 function cleanStringArray(value: unknown, limit: number) {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, limit);
 }
 
-async function createSession(form: FormData, apiKey: string) {
+async function createSession(form: FormData, geminiKey: string | undefined, openRouterKey: string | undefined) {
   const role = String(form.get("role") || "Frontend Developer").slice(0, 120);
   const company = String(form.get("company") || "Not provided").slice(0, 160);
   const interviewStage = String(form.get("interviewStage") || "Not provided").slice(0, 120);
@@ -144,11 +218,11 @@ ${resumeText}`;
     parts.push({ inlineData: { mimeType: resume.type || "application/pdf", data } });
   }
 
-  const generated = await generateWithGemini(apiKey, parts, questionCount >= 40 ? 24576 : 16384);
+  const generated = await generateWithProviders(geminiKey, openRouterKey, parts, questionCount >= 40 ? 24576 : 16384);
   if (!generated.ok) {
     const message = generated.status === 429
-      ? "Gemini is busy right now. Please wait a moment and try again."
-      : "Gemini could not create the session right now. Please try again.";
+      ? "The free AI providers are busy right now. Please wait a moment and try again."
+      : "The AI providers could not create the session right now. Please try again.";
     return NextResponse.json({ error: message, retryAfter: generated.retryAfter }, { status: 502 });
   }
 
@@ -184,11 +258,11 @@ ${resumeText}`;
       },
     });
   } catch {
-    return NextResponse.json({ error: "Gemini returned an unexpected session. Please try again." }, { status: 502 });
+    return NextResponse.json({ error: "The AI provider returned an unexpected session. Please try again." }, { status: 502 });
   }
 }
 
-async function evaluateAnswer(form: FormData, apiKey: string) {
+async function evaluateAnswer(form: FormData, geminiKey: string | undefined, openRouterKey: string | undefined) {
   const role = String(form.get("role") || "the target role").slice(0, 120);
   const question = String(form.get("question") || "").slice(0, 2000);
   const answer = String(form.get("answer") || "").slice(0, 12000);
@@ -213,9 +287,9 @@ Score these exact dimensions within their maximums: relevance 20, technical 25, 
 Return ONLY valid JSON:
 {"scores":{"relevance":0,"technical":0,"consistency":0,"structure":0,"communication":0,"examples":0},"summary":"...","worked":["..."],"improve":["..."],"better_answer":"...","follow_up":"...","related_topics":["..."]}`;
 
-  const generated = await generateWithGemini(apiKey, [{ text: prompt }], 3072);
+  const generated = await generateWithProviders(geminiKey, openRouterKey, [{ text: prompt }], 3072);
   if (!generated.ok) {
-    return NextResponse.json({ error: "Gemini could not review this answer right now. Please try again." }, { status: 502 });
+    return NextResponse.json({ error: "The AI providers could not review this answer right now. Please try again." }, { status: 502 });
   }
 
   try {
@@ -247,18 +321,21 @@ Return ONLY valid JSON:
       relatedTopics: cleanStringArray(payload.related_topics, 4),
     });
   } catch {
-    return NextResponse.json({ error: "Gemini returned unexpected feedback. Please try again." }, { status: 502 });
+    return NextResponse.json({ error: "The AI provider returned unexpected feedback. Please try again." }, { status: 502 });
   }
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "AI coaching is not configured yet." }, { status: 503 });
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (!geminiKey && !openRouterKey) return NextResponse.json({ error: "AI coaching is not configured yet." }, { status: 503 });
 
   try {
     const form = await request.formData();
     const action = String(form.get("action") || "session");
-    return action === "evaluate" ? evaluateAnswer(form, apiKey) : createSession(form, apiKey);
+    return action === "evaluate"
+      ? evaluateAnswer(form, geminiKey, openRouterKey)
+      : createSession(form, geminiKey, openRouterKey);
   } catch {
     return NextResponse.json({ error: "The request could not be processed. Please try again." }, { status: 400 });
   }

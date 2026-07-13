@@ -362,7 +362,7 @@ export default function Home() {
             <label>What do you want to improve?<textarea className="context-textarea short" value={focusAreas} onChange={(event) => setFocusAreas(event.target.value)} placeholder="e.g. JavaScript fundamentals, explaining my projects, confidence, career gap" /></label>
             {generationError && <p className="form-error" role="alert">{generationError}</p>}
             <button className="primary-button full-button" disabled={!resumeName || !role.trim()} onClick={beginPractice}>Create practice session <span>→</span></button>
-            <p className="secure-note">Your Gemini key stays on the server. Resume content is only sent to create this session.</p>
+            <p className="secure-note">Your AI keys stay on the server. Resume content is only sent to create this session.</p>
           </div>
         </section>
       </main>

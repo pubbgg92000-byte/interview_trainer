@@ -40,6 +40,8 @@ test("keeps Gemini private and includes the full coaching flow", async () => {
   assert.match(page, /Get coaching feedback/);
   assert.match(page, /THE INTERVIEWER CONTINUES/);
   assert.match(route, /process\.env\.GEMINI_API_KEY/);
+  assert.match(route, /process\.env\.OPENROUTER_API_KEY/);
+  assert.match(route, /openrouter\/free/);
   assert.match(route, /action === "evaluate"/);
   assert.match(route, /gemini-3\.5-flash/);
   assert.match(route, /\[20, 30, 40, 50\]/);

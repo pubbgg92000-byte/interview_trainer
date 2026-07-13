@@ -11,7 +11,7 @@ A focused interview-practice web app that turns a candidate's resume into realis
 - Review expected points, likely follow-up questions, and a hidden suggested answer.
 - Retry questions and track improvement across attempts.
 
-Gemini generates a fresh six-question interview session from the uploaded resume. The app keeps the API key server-side; it is never sent to the browser or committed to the repository.
+Gemini generates the interview session from the uploaded resume. If Gemini is unavailable, OpenRouter's free-model router provides a secondary path. Both API keys stay server-side; they are never sent to the browser or committed to the repository.
 
 ## Run locally
 
@@ -36,6 +36,6 @@ pnpm run build
 - Vinext / Vite and Cloudflare-compatible deployment
 - Tailwind CSS
 
-## Configure Gemini locally
+## Configure AI providers locally
 
-Create a local `.env` file containing `GEMINI_API_KEY=your_key`. Do not commit this file. The deployed application uses a protected server-side environment variable instead.
+Create a local `.env.local` file containing `GEMINI_API_KEY=your_key` and, optionally, `OPENROUTER_API_KEY=your_key`. Do not commit this file. Gemini is the primary provider; OpenRouter's `openrouter/free` router is used only if Gemini fails. Production uses protected server-side environment variables.
