@@ -210,6 +210,17 @@ function defaultInterviewDate() {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeStoredQuestions(questions: Question[]) {
+  return questions.map((item) => {
+    const looksLikeCoding = /\b(implement|debug|algorithm|coding|refactor|write (?:code|a function|tests?)|test cases?|component)\b/i.test(`${item.category} ${item.prompt}`);
+    const onlyPlaceholder = !item.starterCode || /write your solution here/i.test(item.starterCode);
+    if (item.kind === "coding" && !item.testCases?.length && onlyPlaceholder && !looksLikeCoding) {
+      return { ...item, kind: "interview" as const, starterCode: "" };
+    }
+    return item;
+  });
+}
+
 function evaluate(question: Question, answer: string) {
   const words = cleanWords(answer);
   const exact = question.expected.filter((item) => words.includes(item));
@@ -313,11 +324,14 @@ export default function Home() {
     }
     window.queueMicrotask(() => {
       const restoredHasSession = Boolean(restored?.hasCreatedSession || restored?.screen === "practice" || restored?.screen === "report");
-      if (restored?.questions?.length) setSessionQuestions(restored.questions);
+      const restoredQuestions = restored?.questions?.length ? normalizeStoredQuestions(restored.questions) : undefined;
+      const restoredIndex = typeof restored?.questionIndex === "number" ? Math.min(Math.max(restored.questionIndex, 0), Math.max((restoredQuestions?.length || defaultQuestions.length) - 1, 0)) : 0;
+      const migratedCurrentQuestion = restored?.questions?.[restoredIndex]?.kind === "coding" && restoredQuestions?.[restoredIndex]?.kind === "interview";
+      if (restoredQuestions) setSessionQuestions(restoredQuestions);
       if (restored?.profile) setProfile(restored.profile);
       if (restored?.attempts) setAttempts(restored.attempts);
-      if (typeof restored?.questionIndex === "number") setQuestionIndex(Math.min(Math.max(restored.questionIndex, 0), Math.max((restored.questions?.length || defaultQuestions.length) - 1, 0)));
-      if (typeof restored?.answer === "string") setAnswer(restored.answer);
+      if (typeof restored?.questionIndex === "number") setQuestionIndex(restoredIndex);
+      if (typeof restored?.answer === "string") setAnswer(migratedCurrentQuestion && /write your solution here/i.test(restored.answer) ? "" : restored.answer);
       if (restored?.feedback) setFeedback(restored.feedback);
       if (typeof restored?.showSuggested === "boolean") setShowSuggested(restored.showSuggested);
       if (typeof restored?.role === "string") setRole(restored.role);
@@ -734,7 +748,7 @@ export default function Home() {
       </aside>
 
       <section className="practice-area">
-        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}><BarChart3 size={13} aria-hidden="true" /> {averageScore || "—"}</button><span className="difficulty-pill">{question.level}</span><span className="ai-badge"><Sparkles size={13} aria-hidden="true" /> AI interviewer</span></div></header>
+        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {safeQuestionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}><BarChart3 size={13} aria-hidden="true" /> {averageScore || "—"}</button><span className={`question-type-pill ${question.kind === "coding" ? "coding" : "discussion"}`}>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.kind === "coding" ? "Coding task" : "Discussion"}</span><span className="difficulty-pill">{question.level}</span><span className="ai-badge"><Sparkles size={13} aria-hidden="true" /> AI interviewer</span></div></header>
         <article className="question-card"><div className="question-meta"><span>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><details className="intent-note"><summary><Lightbulb size={15} aria-hidden="true" /> Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><Lightbulb size={15} aria-hidden="true" /><span><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</span></p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b><ListChecks size={14} aria-hidden="true" /> Check these cases</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
 
         <section className="answer-card">

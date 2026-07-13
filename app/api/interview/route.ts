@@ -315,11 +315,15 @@ ${resumeText}`;
       expected: cleanStringArray(item.expected_points, 8).length ? cleanStringArray(item.expected_points, 8) : ["example", "contribution"],
       suggested: item.suggested_answer || "Use a clear context, contribution, action, and result structure.",
       followUp: item.follow_up || "What was your exact contribution?",
-      kind: item.kind === "coding" || (practiceMode === "Coding lab" && index < Math.ceil(questionCount * 2 / 3)) ? "coding" : "interview",
-      starterCode: item.starter_code || (practiceMode === "Coding lab" && index < Math.ceil(questionCount * 2 / 3) ? "// Write your solution here\n" : ""),
+      kind: item.kind === "coding" ? "coding" : "interview",
+      starterCode: item.starter_code || (item.kind === "coding" ? "// Write your solution here\n" : ""),
       testCases: cleanStringArray(item.test_cases, 6),
       solutionOutline: item.solution_outline || item.suggested_answer || "Explain the approach, edge cases, complexity, and testing strategy.",
     }));
+
+    if (practiceMode === "Coding lab" && questions.filter((item) => item.kind === "coding").length < Math.ceil(questionCount * 2 / 3)) {
+      return codingFallback(questionCount, requestedRole, resumeText, difficulty, { company, interviewStage, interviewDate });
+    }
 
     return NextResponse.json({
       questions,
