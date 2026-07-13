@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Question = {
   id: number;
@@ -15,6 +15,25 @@ type Question = {
 };
 
 type Attempt = { score: number; answer: string };
+
+type Profile = {
+  candidateName: string;
+  headline: string;
+  summary: string;
+  strengths: string[];
+  focusTopics: string[];
+};
+
+type CoachResult = {
+  scores: Record<(typeof scoreLabels)[number][0], number>;
+  total: number;
+  summary: string;
+  worked: string[];
+  improve: string[];
+  betterAnswer: string;
+  followUp: string;
+  relatedTopics: string[];
+};
 
 const defaultQuestions: Question[] = [
   {
@@ -88,6 +107,22 @@ const scoreLabels = [
   ["examples", "Evidence & examples", 10],
 ] as const;
 
+const defaultProfile: Profile = {
+  candidateName: "Arvind Mangalarapu",
+  headline: "Frontend Developer",
+  summary: "Frontend-focused candidate with experience in responsive interfaces, APIs, testing, and AI workflows.",
+  strengths: ["Frontend delivery", "API integration", "AI workflow exposure"],
+  focusTopics: ["Frontend architecture", "API reliability", "Testing strategy", "Behavioural stories"],
+};
+
+const waitingTips = [
+  "A clear answer is better than a long answer. Lead with what you personally did.",
+  "For project questions, use: context, responsibility, action, and result.",
+  "If you do not know an answer, explain how you would find the answer instead of guessing.",
+  "Interviewers listen for evidence. One real example is stronger than five buzzwords.",
+  "Pause before answering. A thoughtful two-second pause sounds confident.",
+];
+
 function cleanWords(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
 }
@@ -110,29 +145,62 @@ function evaluate(question: Question, answer: string) {
   };
   const total = Object.values(scores).reduce((sum, value) => sum + value, 0);
   const missing = question.expected.filter((item) => !exact.includes(item));
-  return { scores, total, missing, exact, hasStructure, hasExample };
+  return {
+    scores,
+    total,
+    summary: total >= 75
+      ? "You addressed the prompt clearly. Make the outcome and your personal contribution more specific."
+      : "You have the right direction. Add concrete evidence and a clearer sequence.",
+    worked: [
+      exact.length ? `You included relevant ideas: ${exact.join(", ")}.` : "You attempted a direct answer.",
+      hasStructure ? "Your answer has a visible flow." : "You stayed focused on the question.",
+    ],
+    improve: [
+      ...missing.slice(0, 3).map((item) => `Add a clear point about ${item}.`),
+      ...(!hasExample ? ["Include one specific example of what you personally did."] : []),
+    ].slice(0, 4),
+    betterAnswer: question.suggested,
+    followUp: question.followUp,
+    relatedTopics: question.tested,
+  } satisfies CoachResult;
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<"home" | "setup" | "practice">("home");
+  const [screen, setScreen] = useState<"home" | "setup" | "practice">("setup");
   const [role, setRole] = useState("Frontend Developer");
+  const [company, setCompany] = useState("");
+  const [interviewStage, setInterviewStage] = useState("Technical round");
+  const [interviewDate, setInterviewDate] = useState("2026-07-15");
+  const [jobDescription, setJobDescription] = useState("");
+  const [focusAreas, setFocusAreas] = useState("");
   const [interviewType, setInterviewType] = useState("Mixed interview");
   const [difficulty, setDifficulty] = useState("Intermediate");
+  const [questionCount, setQuestionCount] = useState("30");
   const [resumeName, setResumeName] = useState("");
   const [resumeText, setResumeText] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [sessionQuestions, setSessionQuestions] = useState<Question[]>(defaultQuestions);
+  const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
   const [generationError, setGenerationError] = useState("");
+  const [evaluationError, setEvaluationError] = useState("");
+  const [tipIndex, setTipIndex] = useState(0);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answer, setAnswer] = useState("");
-  const [evaluated, setEvaluated] = useState(false);
+  const [feedback, setFeedback] = useState<CoachResult | null>(null);
   const [showSuggested, setShowSuggested] = useState(false);
   const [attempts, setAttempts] = useState<Record<number, Attempt[]>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const question = sessionQuestions[questionIndex];
-  const result = useMemo(() => (evaluated ? evaluate(question, answer) : null), [answer, evaluated, question]);
+  const localResult = useMemo(() => evaluate(question, answer), [answer, question]);
   const questionAttempts = attempts[question.id] ?? [];
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const timer = window.setInterval(() => setTipIndex((current) => (current + 1) % waitingTips.length), 3200);
+    return () => window.clearInterval(timer);
+  }, [isGenerating]);
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -147,7 +215,7 @@ export default function Home() {
     }
   }
 
-  function useDemoProfile() {
+  function loadDemoProfile() {
     setResumeName("Arvind_Mangalarapu_Frontend_Resume.pdf");
     setResumeText("Frontend developer with Svelte, Tailwind CSS, REST APIs, n8n, Cloudflare and Selenium experience.");
     setResumeFile(null);
@@ -159,17 +227,26 @@ export default function Home() {
     setGenerationError("");
     try {
       const formData = new FormData();
+      formData.append("action", "session");
       formData.append("resumeText", resumeText || "Frontend developer seeking a role.");
       formData.append("role", role);
+      formData.append("company", company);
+      formData.append("interviewStage", interviewStage);
+      formData.append("interviewDate", interviewDate);
+      formData.append("jobDescription", jobDescription);
+      formData.append("focusAreas", focusAreas);
       formData.append("interviewType", interviewType);
       formData.append("difficulty", difficulty);
+      formData.append("questionCount", questionCount);
       if (resumeFile) formData.append("resume", resumeFile);
       const response = await fetch("/api/interview", { method: "POST", body: formData });
       const data = await response.json();
       if (!response.ok || !Array.isArray(data.questions)) throw new Error(data.error || "Question generation failed.");
       setSessionQuestions(data.questions);
+      if (data.profile) setProfile(data.profile);
       setQuestionIndex(0);
       setAttempts({});
+      setFeedback(null);
       setScreen("practice");
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "Question generation failed. Please try again.");
@@ -179,15 +256,36 @@ export default function Home() {
     }
   }
 
-  function submitAnswer() {
+  async function submitAnswer() {
     if (answer.trim().length < 35) return;
-    const score = evaluate(question, answer).total;
-    setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score, answer }] }));
-    setEvaluated(true);
+    setIsEvaluating(true);
+    setEvaluationError("");
+    try {
+      const formData = new FormData();
+      formData.append("action", "evaluate");
+      formData.append("role", role);
+      formData.append("question", question.prompt);
+      formData.append("answer", answer);
+      formData.append("reference", question.reference);
+      formData.append("expected", question.expected.join(", "));
+      formData.append("suggested", question.suggested);
+      const response = await fetch("/api/interview", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok || typeof data.total !== "number") throw new Error(data.error || "Feedback failed.");
+      setFeedback(data);
+      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: data.total, answer }] }));
+    } catch (error) {
+      setEvaluationError(error instanceof Error ? error.message : "AI feedback is unavailable. Showing an instant coaching estimate instead.");
+      setFeedback(localResult);
+      setAttempts((current) => ({ ...current, [question.id]: [...(current[question.id] ?? []), { score: localResult.total, answer }] }));
+    } finally {
+      setIsEvaluating(false);
+    }
   }
 
   function tryAgain() {
-    setEvaluated(false);
+    setFeedback(null);
+    setEvaluationError("");
     setShowSuggested(false);
     setAnswer("");
   }
@@ -195,7 +293,8 @@ export default function Home() {
   function nextQuestion() {
     setQuestionIndex((current) => (current + 1) % sessionQuestions.length);
     setAnswer("");
-    setEvaluated(false);
+    setFeedback(null);
+    setEvaluationError("");
     setShowSuggested(false);
   }
 
@@ -204,7 +303,7 @@ export default function Home() {
       <main className="landing-shell">
         <nav className="topbar"><a className="brand" href="#top" aria-label="Resume Interview Coach home"><span className="brand-mark">R</span>Resume Interview Coach</a><button className="ghost-button" onClick={() => setScreen("setup")}>Try a demo <span>→</span></button></nav>
         <section className="hero" id="top">
-          <div className="hero-copy"><p className="eyebrow">PRACTISE WHAT YOUR RESUME PROMISES</p><h1>Turn your resume into your strongest interview answer.</h1><p className="hero-subtitle">Personalised questions, clear feedback and a better answer on every retry - built around the experience you actually have.</p><div className="hero-actions"><button className="primary-button" onClick={() => setScreen("setup")}>Start practising <span>→</span></button><button className="text-button" onClick={() => { useDemoProfile(); setScreen("setup"); }}>Explore a sample session</button></div><p className="privacy-note">No generic question dump. Start with your resume, role and interview type.</p></div>
+          <div className="hero-copy"><p className="eyebrow">PRACTISE WHAT YOUR RESUME PROMISES</p><h1>Turn your resume into your strongest interview answer.</h1><p className="hero-subtitle">Personalised questions, clear feedback and a better answer on every retry - built around the experience you actually have.</p><div className="hero-actions"><button className="primary-button" onClick={() => setScreen("setup")}>Start practising <span>→</span></button><button className="text-button" onClick={() => { loadDemoProfile(); setScreen("setup"); }}>Explore a sample session</button></div><p className="privacy-note">No generic question dump. Start with your resume, role and interview type.</p></div>
           <div className="coach-preview" aria-label="Example coaching feedback"><div className="preview-head"><span className="live-dot" /> Live practice <span>Question 3 of 12</span></div><p className="preview-label">PROJECT DEEP DIVE</p><h2>How did you make your API-connected frontend screen reliable?</h2><div className="mini-answer"><span>Your answer</span><p>“I showed loading states and handled errors...”</p></div><div className="preview-score"><div><strong>78</strong><span>/ 100</span></div><p><b>Getting stronger.</b><br />Add one real debugging example to make this answer more convincing.</p></div></div>
         </section>
         <section className="feature-row"><div><span>01</span><h3>Resume-aware questions</h3><p>Skills, projects, claims and career transitions become realistic prompts.</p></div><div><span>02</span><h3>Feedback with substance</h3><p>See what was accurate, unclear or missing - not just a generic score.</p></div><div><span>03</span><h3>Practise until it clicks</h3><p>Track every attempt and improve the same answer with purpose.</p></div></section>
@@ -212,19 +311,96 @@ export default function Home() {
     );
   }
 
+  if (isGenerating) {
+    return (
+      <main className="generation-shell" aria-live="polite">
+        <div className="generation-card">
+          <span className="generation-mark">✦</span>
+          <div className="generation-spinner" aria-hidden="true" />
+          <p className="eyebrow">GEMINI IS PREPARING YOUR SESSION</p>
+          <h1>Turning your resume into realistic interview questions.</h1>
+          <p>We are identifying your experience, skills, projects, and the follow-up questions an interviewer is likely to ask.</p>
+          <div className="generation-steps"><span>Resume analysed</span><span>Questions tailored</span><span>Coach session ready</span></div>
+          <div className="waiting-tip"><span>INTERVIEW TIP</span><p>“{waitingTips[tipIndex]}”</p></div>
+        </div>
+      </main>
+    );
+  }
+
   if (screen === "setup") {
     return (
-      <main className="setup-shell"><nav className="topbar"><button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button><span className="step-label">SETUP <b>01 / 02</b></span></nav><section className="setup-grid"><div className="setup-copy"><p className="eyebrow">BUILD YOUR SESSION</p><h1>Bring the resume. We’ll find the questions behind it.</h1><p>Choose the interview you want to practise. You can change these settings anytime.</p><div className="profile-strip"><span className="initials">AM</span><div><b>{resumeName ? "Resume ready to analyse" : "Start with your resume"}</b><small>{resumeName || "PDF, DOCX or TXT, up to 10MB"}</small></div></div></div><div className="setup-card"><div className={`dropzone ${resumeName ? "has-file" : ""}`} onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event) => event.key === "Enter" && inputRef.current?.click()}><input ref={inputRef} type="file" accept=".pdf,.docx,.txt,application/pdf,text/plain" onChange={onFileChange} /><span className="upload-icon">↑</span><b>{resumeName || "Upload your resume"}</b><small>{resumeName ? "Ready for personalised analysis" : "PDF, DOCX or TXT"}</small></div><button className="demo-link" onClick={useDemoProfile}>Use Arvind’s frontend developer sample instead</button><label>Target role<input value={role} onChange={(event) => setRole(event.target.value)} /></label><div className="option-grid"><label>Interview type<select value={interviewType} onChange={(event) => setInterviewType(event.target.value)}><option>Mixed interview</option><option>Technical interview</option><option>Project-based interview</option><option>Behavioural interview</option><option>Rapid-fire interview</option></select></label><label>Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label></div><button className="primary-button full-button" onClick={beginPractice}>Create practice session <span>→</span></button></div></section></main>
+      <main className="setup-shell">
+        <nav className="topbar">
+          <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
+          <span className="step-label">SETUP <b>01 / 02</b></span>
+        </nav>
+        <section className="setup-grid">
+          <div className="setup-copy">
+            <p className="eyebrow">BUILD YOUR SESSION</p>
+            <h1>Bring the resume. We’ll find the questions behind it.</h1>
+            <p>Choose the interview you want to practise. You can change these settings anytime.</p>
+            <div className="profile-strip"><span className="initials">CV</span><div><b>{resumeName ? "Resume ready to analyse" : "Start with your resume"}</b><small>{resumeName || "PDF, DOCX or TXT, up to 4MB"}</small></div></div>
+          </div>
+          <div className="setup-card">
+            <div className={`dropzone ${resumeName ? "has-file" : ""}`} onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && inputRef.current?.click()}>
+              <input ref={inputRef} type="file" accept=".pdf,.docx,.txt,application/pdf,text/plain" onChange={onFileChange} />
+              <span className="upload-icon">↑</span><b>{resumeName || "Upload your resume"}</b><small>{resumeName ? "Ready for personalised analysis" : "PDF, DOCX or TXT"}</small>
+            </div>
+            <button className="demo-link" onClick={loadDemoProfile}>Use the frontend developer sample instead</button>
+            <label>Target role<input value={role} onChange={(event) => setRole(event.target.value)} placeholder="e.g. Product Manager" /></label>
+            <div className="option-grid">
+              <label>Interview type<select value={interviewType} onChange={(event) => setInterviewType(event.target.value)}><option>Mixed interview</option><option>Technical interview</option><option>Project-based interview</option><option>Behavioural interview</option><option>Rapid-fire interview</option></select></label>
+              <label>Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label>
+            </div>
+            <label>Question bank size<select value={questionCount} onChange={(event) => setQuestionCount(event.target.value)}><option value="20">20 focused questions</option><option value="30">30 complete questions</option><option value="40">40 intensive questions</option><option value="50">50 maximum-coverage questions</option></select></label>
+            <div className="option-grid">
+              <label>Company (optional)<input value={company} onChange={(event) => setCompany(event.target.value)} placeholder="e.g. Zomato" /></label>
+              <label>Interview round<select value={interviewStage} onChange={(event) => setInterviewStage(event.target.value)}><option>Recruiter screening</option><option>Hiring manager round</option><option>Technical round</option><option>Live coding round</option><option>Final round</option></select></label>
+            </div>
+            <label>Interview date<input type="date" value={interviewDate} onChange={(event) => setInterviewDate(event.target.value)} /></label>
+            <label>Job description (recommended)<textarea className="context-textarea" value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="Paste the job description so questions match what the employer needs." /></label>
+            <label>What do you want to improve?<textarea className="context-textarea short" value={focusAreas} onChange={(event) => setFocusAreas(event.target.value)} placeholder="e.g. JavaScript fundamentals, explaining my projects, confidence, career gap" /></label>
+            {generationError && <p className="form-error" role="alert">{generationError}</p>}
+            <button className="primary-button full-button" disabled={!resumeName || !role.trim()} onClick={beginPractice}>Create practice session <span>→</span></button>
+            <p className="secure-note">Your Gemini key stays on the server. Resume content is only sent to create this session.</p>
+          </div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <main className="app-shell"><aside className="sidebar"><button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button><div className="candidate-card"><span className="initials">AM</span><div><b>Arvind Mangalarapu</b><small>{role}</small></div></div><div className="session-info"><p>YOUR SESSION</p><strong>{interviewType}</strong><span>{difficulty} · Resume matched</span></div><ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => { setQuestionIndex(index); setAnswer(""); setEvaluated(false); setShowSuggested(false); }}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""}` : "Not started"}</small></div></button></li>)}</ol><button className="sidebar-link" onClick={() => setScreen("setup")}>← Edit session settings</button></aside>
-      <section className="practice-area"><header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><span className="difficulty-pill">{question.level}</span><button className="save-button">Session saved</button></div></header><article className="question-card"><div className="question-meta"><span>{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><p className="coach-note"><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</p></article>
-        <section className="answer-card"><div className="answer-heading"><div><h2>Your answer</h2><p>Write as you would speak. The coach looks for useful detail, not length.</p></div><span className={answer.length > 35 ? "word-good" : ""}>{cleanWords(answer).length} words</span></div><textarea value={answer} onChange={(event) => { setAnswer(event.target.value); if (evaluated) setEvaluated(false); }} placeholder="Start with the situation or your responsibility. Then explain what you did and what happened..." aria-label="Your interview answer" />{!evaluated && <div className="answer-footer"><span>{answer.trim().length < 35 ? "Write at least a few complete sentences to get feedback." : "Ready when you are."}</span><button className="primary-button" disabled={answer.trim().length < 35} onClick={submitAnswer}>Get coaching feedback <span>→</span></button></div>}</section>
-        {evaluated && result && <section className="feedback-section"><div className="score-card"><div className="score-orbit"><strong>{result.total}</strong><span>out of 100</span></div><div><p className="eyebrow">YOUR COACHING RESULT</p><h2>{result.total >= 75 ? "A strong answer with room to sharpen." : "Good start. Add the details that make it believable."}</h2><p>{result.total >= 75 ? "You addressed the prompt clearly. Now make the outcome and your personal contribution even more specific." : "You have the right direction. Use the points below to make your explanation clearer and more complete."}</p></div><div className="attempt-history"><span>ATTEMPTS</span>{questionAttempts.map((attempt, index) => <div key={`${attempt.score}-${index}`}><small>Try {index + 1}</small><b>{attempt.score}</b>{index > 0 && <em>+{attempt.score - questionAttempts[index - 1].score}</em>}</div>)}</div></div><div className="score-breakdown">{scoreLabels.map(([key, label, max]) => { const value = result.scores[key]; return <div key={key}><div><span>{label}</span><b>{value}/{max}</b></div><i><i style={{ width: `${(value / max) * 100}%` }} /></i></div>; })}</div><div className="feedback-grid"><div className="feedback-box success"><h3>What worked</h3><ul><li>{result.exact.length ? `You included relevant points: ${result.exact.join(", ")}.` : "You attempted a direct answer rather than avoiding the question."}</li><li>{result.hasStructure ? "Your answer has a visible flow, which makes it easier to follow." : "You kept the focus on the question."}</li></ul></div><div className="feedback-box improve"><h3>Make it stronger</h3><ul>{result.missing.slice(0, 3).map((item) => <li key={item}>Add a clear point about <b>{item}</b>.</li>)}{!result.hasExample && <li>Include one specific example of what <b>you</b> did.</li>}</ul></div></div><details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>View suggested answer <span>⌄</span></summary><div><p>{question.suggested}</p><small>This is a structure guide. Use only details you can truthfully explain.</small></div></details><div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}>↻ Try again</button><button className="primary-button" onClick={nextQuestion}>Next question <span>→</span></button></div></section>}
+    <main className="app-shell">
+      <aside className="sidebar">
+        <button className="brand brand-button" onClick={() => setScreen("home")}><span className="brand-mark">R</span>Resume Interview Coach</button>
+        <div className="candidate-card"><span className="initials">{profile.candidateName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><b>{profile.candidateName}</b><small>{profile.headline || role}</small></div></div>
+        <div className="session-info"><p>YOUR SESSION</p><strong>{interviewType}</strong><span>{difficulty} · {sessionQuestions.length} resume-matched questions</span></div>
+        <ol className="question-list">{sessionQuestions.map((item, index) => <li key={item.id} className={index === questionIndex ? "active" : ""}><button onClick={() => { setQuestionIndex(index); setAnswer(""); setFeedback(null); setEvaluationError(""); setShowSuggested(false); }}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.category}</b><small>{attempts[item.id]?.length ? `${attempts[item.id].length} attempt${attempts[item.id].length > 1 ? "s" : ""}` : "Not started"}</small></div></button></li>)}</ol>
+        <button className="sidebar-link" onClick={() => setScreen("setup")}>← Edit session settings</button>
+      </aside>
+
+      <section className="practice-area">
+        <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {questionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><span className="difficulty-pill">{question.level}</span><span className="ai-badge">✦ AI interviewer</span></div></header>
+        <article className="question-card"><div className="question-meta"><span>{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><p className="coach-note"><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</p></article>
+
+        <section className="answer-card">
+          <div className="answer-heading"><div><h2>Your answer</h2><p>Write as you would speak. The coach looks for useful detail, not length.</p></div><span className={answer.length > 35 ? "word-good" : ""}>{cleanWords(answer).length} words</span></div>
+          <textarea value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder="Start with the situation or your responsibility. Then explain what you did and what happened..." aria-label="Your interview answer" />
+          {!feedback && <div className="answer-footer"><span>{answer.trim().length < 35 ? "Write at least a few complete sentences to get feedback." : "Ready when you are."}</span><button className="primary-button" disabled={answer.trim().length < 35 || isEvaluating} onClick={submitAnswer}>{isEvaluating ? "Gemini is reviewing…" : "Get coaching feedback"} <span>→</span></button></div>}
+          {evaluationError && <p className="inline-warning" role="status">{evaluationError}</p>}
+        </section>
+
+        {feedback && <section className="feedback-section">
+          <div className="score-card"><div className="score-orbit"><strong>{feedback.total}</strong><span>out of 100</span></div><div><p className="eyebrow">YOUR COACHING RESULT</p><h2>{feedback.total >= 75 ? "A strong answer with room to sharpen." : "Good start. Add the details that make it believable."}</h2><p>{feedback.summary}</p></div><div className="attempt-history"><span>ATTEMPTS</span>{questionAttempts.map((attempt, index) => <div key={`${attempt.score}-${index}`}><small>Try {index + 1}</small><b>{attempt.score}</b>{index > 0 && <em>{attempt.score - questionAttempts[index - 1].score >= 0 ? "+" : ""}{attempt.score - questionAttempts[index - 1].score}</em>}</div>)}</div></div>
+          <div className="score-breakdown">{scoreLabels.map(([key, label, max]) => { const value = feedback.scores[key]; return <div key={key}><div><span>{label}</span><b>{value}/{max}</b></div><i><i style={{ width: `${(value / max) * 100}%` }} /></i></div>; })}</div>
+          <div className="feedback-grid"><div className="feedback-box success"><h3>What worked</h3><ul>{feedback.worked.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="feedback-box improve"><h3>Make it stronger</h3><ul>{feedback.improve.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
+          <details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>See a stronger answer <span>⌄</span></summary><div><p>{feedback.betterAnswer}</p><small>Use this as a structure guide. Keep only details you can truthfully defend.</small></div></details>
+          <div className="follow-up-card"><p className="eyebrow">THE INTERVIEWER CONTINUES</p><h3>{feedback.followUp}</h3><div>{feedback.relatedTopics.map((topic) => <span key={topic}>{topic}</span>)}</div></div>
+          <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}>↻ Improve this answer</button><button className="primary-button" onClick={nextQuestion}>Next question <span>→</span></button></div>
+        </section>}
       </section>
-      <aside className="coach-rail"><div className="rail-card"><span className="rail-icon">✦</span><p className="eyebrow">QUESTION INTENT</p><h3>Why this is being asked</h3><p>Your resume claims experience in <b>{question.reference}</b>. An interviewer wants to understand what you personally did, not just the tools named.</p></div><div className="rail-card"><p className="eyebrow">LISTEN FOR</p><ul>{question.expected.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card follow-up"><p className="eyebrow">LIKELY FOLLOW-UP</p><p>{question.followUp}</p></div></aside>
+
+      <aside className="coach-rail"><div className="rail-card"><span className="rail-icon">✦</span><p className="eyebrow">RESUME SNAPSHOT</p><h3>{profile.headline}</h3><p>{profile.summary}</p></div><div className="rail-card"><p className="eyebrow">LISTEN FOR</p><ul>{question.expected.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card"><p className="eyebrow">TOPICS TO REVISE</p><ul>{profile.focusTopics.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="rail-card follow-up"><p className="eyebrow">LIKELY FOLLOW-UP</p><p>{question.followUp}</p></div></aside>
     </main>
   );
 }

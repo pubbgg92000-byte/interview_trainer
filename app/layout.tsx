@@ -1,14 +1,23 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Resume Interview Coach",
-  description: "Personalised interview practice from the experience on your resume.",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
+  const image = `${protocol}://${host}/og.jpg`;
+  const title = "Resume Interview Coach";
+  const description = "Resume-aware interview questions, AI feedback, stronger answers, and focused topics to revise.";
+
+  return {
+    title,
+    description,
+    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    openGraph: { title, description, type: "website", images: [{ url: image, width: 1200, height: 630, alt: "Resume Interview Coach" }] },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
+  };
+}
 
 export default function RootLayout({
   children,
