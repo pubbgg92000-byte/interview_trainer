@@ -28,6 +28,7 @@ type GeneratedQuestion = {
   starter_code?: string;
   test_cases?: string[];
   solution_outline?: string;
+  sample_call?: string;
 };
 
 type DimensionKey =
@@ -176,16 +177,16 @@ function inferFallbackRole(requestedRole: string, resumeText: string) {
 function codingFallback(questionCount: number, requestedRole: string, resumeText: string, difficulty: string, context: { company: string; interviewStage: string; interviewDate: string }) {
   const role = inferFallbackRole(requestedRole, resumeText);
   const topics = [
-    { name: "Array transformation", skill: "JavaScript", starter: "function transformItems(items) {\n  // Return a new transformed array\n}\n", expected: ["immutability", "map", "edge cases", "complexity"], tests: ["empty array", "duplicate values", "invalid item"] },
-    { name: "Asynchronous requests", skill: "async JavaScript", starter: "async function loadData(url) {\n  // Fetch, validate, and return data\n}\n", expected: ["async/await", "response validation", "error handling", "loading state"], tests: ["successful response", "non-200 response", "network failure"] },
-    { name: "State updates", skill: "React state", starter: "function updateItems(items, id, value) {\n  // Update one item without mutation\n}\n", expected: ["immutable update", "stable identity", "functional state", "rendering"], tests: ["matching id", "missing id", "unchanged items"] },
-    { name: "Search and filtering", skill: "JavaScript", starter: "function filterResults(items, query) {\n  // Return matching results\n}\n", expected: ["normalization", "filter", "empty query", "performance"], tests: ["case-insensitive match", "empty query", "no matches"] },
-    { name: "Form validation", skill: "frontend forms", starter: "function validateForm(values) {\n  const errors = {};\n  // Add field errors\n  return errors;\n}\n", expected: ["validation rules", "clear errors", "accessibility", "edge cases"], tests: ["valid values", "missing required field", "invalid email"] },
-    { name: "Data caching", skill: "frontend architecture", starter: "function createCache(ttlMs) {\n  // Return get and set methods\n}\n", expected: ["cache key", "expiration", "invalidation", "memory"], tests: ["cache hit", "expired entry", "missing key"] },
-    { name: "Debounced input", skill: "browser performance", starter: "function debounce(callback, delay) {\n  // Return a debounced function\n}\n", expected: ["closure", "timer cleanup", "arguments", "this binding"], tests: ["rapid calls", "latest arguments", "delayed invocation"] },
-    { name: "Nested data", skill: "JavaScript", starter: "function flattenTree(nodes) {\n  // Flatten nodes and their children\n}\n", expected: ["recursion", "base case", "ordering", "complexity"], tests: ["empty tree", "deep nesting", "missing children"] },
-    { name: "Retry handling", skill: "API reliability", starter: "async function withRetry(operation, attempts) {\n  // Retry failures safely\n}\n", expected: ["retry limit", "backoff", "error propagation", "idempotency"], tests: ["first attempt succeeds", "later attempt succeeds", "all attempts fail"] },
-    { name: "Memoized calculation", skill: "performance", starter: "function memoize(fn) {\n  // Cache results by arguments\n}\n", expected: ["cache", "arguments", "referential equality", "memory trade-off"], tests: ["repeated arguments", "different arguments", "falsy result"] },
+    { name: "Array transformation", skill: "JavaScript", starter: "function transformItems(items) {\n  // Return a new transformed array\n}\n", example: "transformItems([1, 2, 3])", expected: ["immutability", "map", "edge cases", "complexity"], tests: ["empty array", "duplicate values", "invalid item"] },
+    { name: "Asynchronous requests", skill: "async JavaScript", starter: "async function loadData(url) {\n  // Fetch, validate, and return data\n}\n", example: "typeof loadData", expected: ["async/await", "response validation", "error handling", "loading state"], tests: ["successful response", "non-200 response", "network failure"] },
+    { name: "State updates", skill: "React state", starter: "function updateItems(items, id, value) {\n  // Update one item without mutation\n}\n", example: "updateItems([{ id: 1, value: 'old' }], 1, 'new')", expected: ["immutable update", "stable identity", "functional state", "rendering"], tests: ["matching id", "missing id", "unchanged items"] },
+    { name: "Search and filtering", skill: "JavaScript", starter: "function filterResults(items, query) {\n  // Return matching results\n}\n", example: "filterResults(['React', 'JavaScript', 'CSS'], 'script')", expected: ["normalization", "filter", "empty query", "performance"], tests: ["case-insensitive match", "empty query", "no matches"] },
+    { name: "Form validation", skill: "frontend forms", starter: "function validateForm(values) {\n  const errors = {};\n  // Add field errors\n  return errors;\n}\n", example: "validateForm({ email: 'candidate@example.com', name: '' })", expected: ["validation rules", "clear errors", "accessibility", "edge cases"], tests: ["valid values", "missing required field", "invalid email"] },
+    { name: "Data caching", skill: "frontend architecture", starter: "function createCache(ttlMs) {\n  // Return get and set methods\n}\n", example: "typeof createCache", expected: ["cache key", "expiration", "invalidation", "memory"], tests: ["cache hit", "expired entry", "missing key"] },
+    { name: "Debounced input", skill: "browser performance", starter: "function debounce(callback, delay) {\n  // Return a debounced function\n}\n", example: "typeof debounce", expected: ["closure", "timer cleanup", "arguments", "this binding"], tests: ["rapid calls", "latest arguments", "delayed invocation"] },
+    { name: "Nested data", skill: "JavaScript", starter: "function flattenTree(nodes) {\n  // Flatten nodes and their children\n}\n", example: "flattenTree([{ id: 1, children: [{ id: 2 }] }])", expected: ["recursion", "base case", "ordering", "complexity"], tests: ["empty tree", "deep nesting", "missing children"] },
+    { name: "Retry handling", skill: "API reliability", starter: "async function withRetry(operation, attempts) {\n  // Retry failures safely\n}\n", example: "withRetry(async () => 'ok', 3)", expected: ["retry limit", "backoff", "error propagation", "idempotency"], tests: ["first attempt succeeds", "later attempt succeeds", "all attempts fail"] },
+    { name: "Memoized calculation", skill: "performance", starter: "function memoize(fn) {\n  // Cache results by arguments\n}\n", example: "typeof memoize", expected: ["cache", "arguments", "referential equality", "memory trade-off"], tests: ["repeated arguments", "different arguments", "falsy result"] },
   ];
   const taskTypes = [
     (topic: (typeof topics)[number]) => `Implement a reliable ${topic.name.toLowerCase()} utility. Explain your assumptions and complexity.`,
@@ -211,6 +212,7 @@ function codingFallback(questionCount: number, requestedRole: string, resumeText
       starterCode: topic.starter,
       testCases: topic.tests,
       solutionOutline: `Define the contract, handle ${topic.tests.join(", ")}, keep the implementation readable, and discuss complexity.`,
+      testExpression: topic.example,
     };
   });
   return NextResponse.json({
@@ -271,7 +273,7 @@ Rules:
 - Identify 3-6 focused topics the candidate should revise for the target role.
 
 Return ONLY valid JSON in this exact shape:
-{"profile":{"candidate_name":"...","headline":"...","summary":"...","strengths":["..."],"focus_topics":["..."],"job_match":["..."],"missing_skills":["..."],"resume_risks":["..."]},"questions":[{"category":"...","difficulty":"${difficulty}","kind":"interview","question":"...","resume_reference":"...","skills_tested":["..."],"expected_points":["..."],"suggested_answer":"...","follow_up":"...","starter_code":"","test_cases":["..."],"solution_outline":"..."}]}
+{"profile":{"candidate_name":"...","headline":"...","summary":"...","strengths":["..."],"focus_topics":["..."],"job_match":["..."],"missing_skills":["..."],"resume_risks":["..."]},"questions":[{"category":"...","difficulty":"${difficulty}","kind":"interview","question":"...","resume_reference":"...","skills_tested":["..."],"expected_points":["..."],"suggested_answer":"...","follow_up":"...","starter_code":"","test_cases":["..."],"solution_outline":"...","sample_call":""}]}
 
 Resume text follows:
 ${resumeText}`;
@@ -319,6 +321,7 @@ ${resumeText}`;
       starterCode: item.starter_code || (item.kind === "coding" ? "// Write your solution here\n" : ""),
       testCases: cleanStringArray(item.test_cases, 6),
       solutionOutline: item.solution_outline || item.suggested_answer || "Explain the approach, edge cases, complexity, and testing strategy.",
+      testExpression: item.sample_call || "",
     }));
 
     if (practiceMode === "Coding lab" && questions.filter((item) => item.kind === "coding").length < Math.ceil(questionCount * 2 / 3)) {

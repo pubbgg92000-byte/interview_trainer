@@ -44,6 +44,7 @@ type Question = {
   starterCode?: string;
   testCases?: string[];
   solutionOutline?: string;
+  testExpression?: string;
 };
 
 type Attempt = { score: number; answer: string; createdAt?: string };
@@ -190,6 +191,7 @@ type StoredSession = {
   practiceMode?: string;
   difficulty?: string;
   questionCount?: string;
+  codeExpression?: string;
 };
 
 const waitingTips = [
@@ -295,6 +297,7 @@ export default function Home() {
   const [speechSupported, setSpeechSupported] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [codeOutput, setCodeOutput] = useState("");
+  const [codeExpression, setCodeExpression] = useState("");
   const [hasCreatedSession, setHasCreatedSession] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -332,6 +335,7 @@ export default function Home() {
       if (restored?.attempts) setAttempts(restored.attempts);
       if (typeof restored?.questionIndex === "number") setQuestionIndex(restoredIndex);
       if (typeof restored?.answer === "string") setAnswer(migratedCurrentQuestion && /write your solution here/i.test(restored.answer) ? "" : restored.answer);
+      if (typeof restored?.codeExpression === "string") setCodeExpression(restored.codeExpression);
       if (restored?.feedback) setFeedback(restored.feedback);
       if (typeof restored?.showSuggested === "boolean") setShowSuggested(restored.showSuggested);
       if (typeof restored?.role === "string") setRole(restored.role);
@@ -362,9 +366,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!isHydrated || !sessionQuestions.length) return;
-    const stored: StoredSession = { hasCreatedSession, screen, questions: sessionQuestions, profile, attempts, questionIndex: safeQuestionIndex, answer, feedback, showSuggested, role, company, interviewStage, interviewDate, jobDescription, focusAreas, interviewType, practiceMode, difficulty, questionCount };
+    const stored: StoredSession = { hasCreatedSession, screen, questions: sessionQuestions, profile, attempts, questionIndex: safeQuestionIndex, answer, feedback, showSuggested, role, company, interviewStage, interviewDate, jobDescription, focusAreas, interviewType, practiceMode, difficulty, questionCount, codeExpression };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-  }, [answer, attempts, company, difficulty, feedback, focusAreas, hasCreatedSession, interviewDate, interviewStage, interviewType, isHydrated, jobDescription, practiceMode, profile, questionCount, questionIndex, role, safeQuestionIndex, screen, sessionQuestions, showSuggested]);
+  }, [answer, attempts, codeExpression, company, difficulty, feedback, focusAreas, hasCreatedSession, interviewDate, interviewStage, interviewType, isHydrated, jobDescription, practiceMode, profile, questionCount, questionIndex, role, safeQuestionIndex, screen, sessionQuestions, showSuggested]);
 
   useEffect(() => {
     if (!timerRunning) return;
@@ -423,15 +427,17 @@ export default function Home() {
   function runCode() {
     if (!answer.trim()) return;
     setCodeOutput("Running…");
-    const workerSource = `self.onmessage=({data})=>{const logs=[];const console={log:(...v)=>logs.push(v.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '))};try{new Function('console',data)(console);self.postMessage({ok:true,text:logs.join('\\n')||'Code ran without console output.'})}catch(error){self.postMessage({ok:false,text:error?.message||String(error)})}}`;
-    const worker = new Worker(URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" })));
-    const timeout = window.setTimeout(() => { worker.terminate(); setCodeOutput("Stopped after 2 seconds. Check for an infinite loop."); }, 2000);
+    const workerSource = `self.onmessage=async({data})=>{const format=v=>{if(typeof v==='string')return v;if(v===undefined)return'undefined';try{return JSON.stringify(v,null,2)}catch{return String(v)}};const logs=[];const safeConsole={log:(...v)=>logs.push(v.map(format).join(' ')),warn:(...v)=>logs.push('Warning: '+v.map(format).join(' ')),error:(...v)=>logs.push('Error: '+v.map(format).join(' '))};try{const expression=String(data.expression||'').trim();const suffix=expression?'\\nreturn ('+expression+');':'';const body='"use strict"; return (async()=>{\\n'+data.code+suffix+'\\n})();';const result=await new Function('console','fetch','XMLHttpRequest','WebSocket','importScripts',body)(safeConsole,undefined,undefined,undefined,undefined);const sections=[];if(logs.length)sections.push('Console:\\n'+logs.join('\\n'));if(expression)sections.push('Result:\\n'+format(result));self.postMessage({ok:true,text:sections.join('\\n\\n')||'Code ran successfully. Add console.log(...) or a test expression to see a value.'})}catch(error){self.postMessage({ok:false,text:error?.message||String(error)})}}`;
+    const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+    const worker = new Worker(workerUrl);
+    const timeout = window.setTimeout(() => { worker.terminate(); URL.revokeObjectURL(workerUrl); setCodeOutput("Stopped after 2 seconds. Check for an infinite loop."); }, 2000);
     worker.onmessage = (event: MessageEvent<{ ok: boolean; text: string }>) => {
       window.clearTimeout(timeout);
       setCodeOutput(`${event.data.ok ? "✓" : "Error:"} ${event.data.text}`);
       worker.terminate();
+      URL.revokeObjectURL(workerUrl);
     };
-    worker.postMessage(answer);
+    worker.postMessage({ code: answer, expression: codeExpression });
   }
 
   function acceptResume(file: File) {
@@ -500,6 +506,7 @@ export default function Home() {
       }
       setQuestionIndex(0);
       setAnswer(data.questions[0]?.kind === "coding" ? data.questions[0]?.starterCode || "" : "");
+      setCodeExpression(data.questions[0]?.kind === "coding" ? data.questions[0]?.testExpression || "" : "");
       setAttempts({});
       setFeedback(null);
       setHasCreatedSession(true);
@@ -557,6 +564,7 @@ export default function Home() {
     resetAnswerTools();
     setQuestionIndex(index);
     setAnswer(sessionQuestions[index]?.kind === "coding" ? sessionQuestions[index]?.starterCode || "" : "");
+    setCodeExpression(sessionQuestions[index]?.kind === "coding" ? sessionQuestions[index]?.testExpression || "" : "");
     setFeedback(null);
     setEvaluationError("");
     setShowSuggested(false);
@@ -612,6 +620,7 @@ export default function Home() {
     setGenerationError("");
     setEvaluationError("");
     setCodeOutput("");
+    setCodeExpression("");
     setHasCreatedSession(false);
     setSaveNotice("Previous data cleared. Upload a resume to start fresh.");
   }
@@ -755,7 +764,7 @@ export default function Home() {
           <div className="answer-heading"><div><h2>{question.kind === "coding" ? "Your solution" : "Your answer"}</h2><p>{question.kind === "coding" ? "Write JavaScript, run it, then explain your choices." : "Speak or type naturally. The coach looks for useful detail, not length."}</p></div><span className={answerReady ? "word-good" : ""}>{question.kind === "coding" ? `${answer.split("\n").length} lines` : `${cleanWords(answer).length} words`}</span></div>
           {question.kind !== "coding" && <div className="voice-toolbar"><button className={`voice-button ${isListening ? "is-live" : ""}`} disabled={!speechSupported} onClick={toggleVoice}>{isListening ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}{isListening ? "Stop recording" : "Answer with voice"}</button><div className={`answer-timer ${secondsLeft <= 15 ? "time-low" : ""}`}><Timer size={14} aria-hidden="true" /><strong>{String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</strong><span>90-sec target</span></div><span>{speechSupported ? `${fillerCount} filler word${fillerCount === 1 ? "" : "s"}` : "Voice unavailable — type your answer"}</span></div>}
           <textarea className={question.kind === "coding" ? "code-editor" : ""} value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder={question.kind === "coding" ? "Write your JavaScript solution here…" : "Start with the situation or your responsibility. Then explain what you did and what happened..."} aria-label={question.kind === "coding" ? "Your code solution" : "Your interview answer"} spellCheck={question.kind !== "coding"} />
-          {question.kind === "coding" && <div className="code-runner"><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}><Play size={14} fill="currentColor" aria-hidden="true" /> Run JavaScript</button><pre aria-live="polite">{codeOutput || "Console output will appear here."}</pre></div>}
+          {question.kind === "coding" && <div className="code-runner"><div className="code-test-row"><label>Test expression <span>OPTIONAL</span><input value={codeExpression} onChange={(event) => setCodeExpression(event.target.value)} placeholder="e.g. transformItems([1, 2, 3])" spellCheck={false} /></label><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}><Play size={14} fill="currentColor" aria-hidden="true" /> Run JavaScript</button></div><small className="code-comment-note">JavaScript comments work normally: <code>{"// one line"}</code> and <code>{"/* multiple lines */"}</code></small><pre aria-live="polite">{codeOutput || "Console logs and the test-expression result will appear here."}</pre></div>}
           {!feedback && <div className="answer-help">
             <button className="help-button" onClick={() => setShowSuggested((current) => !current)}><BookOpenCheck size={14} aria-hidden="true" />{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
             {showSuggested && <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>}

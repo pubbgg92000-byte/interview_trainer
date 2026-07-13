@@ -46,6 +46,9 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(page, /THE INTERVIEWER CONTINUES/);
   assert.match(page, /Answer with voice/);
   assert.match(page, /Run JavaScript/);
+  assert.match(page, /Test expression/);
+  assert.match(page, /Console logs and the test-expression result/);
+  assert.match(page, /worker\.postMessage\(\{ code: answer, expression: codeExpression \}\)/);
   assert.match(page, /READINESS REPORT/);
   assert.match(page, /Why the interviewer asks this/);
   assert.match(page, /Coding task/);
@@ -54,6 +57,7 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(page, /Reset &amp; start fresh/);
   assert.match(page, /screen, questions: sessionQuestions, profile, attempts/);
   assert.match(route, /codingFallback/);
+  assert.match(route, /sample_call/);
   assert.match(route, /questions\.filter\(\(item\) => item\.kind === "coding"\)/);
   assert.match(route, /process\.env\.GEMINI_API_KEY/);
   assert.match(route, /process\.env\.OPENROUTER_API_KEY/);
