@@ -45,6 +45,9 @@ type Question = {
   testCases?: string[];
   solutionOutline?: string;
   testExpression?: string;
+  functionDeclaration?: string;
+  expectedOutput?: string;
+  referenceSolution?: string;
 };
 
 type Attempt = { score: number; answer: string; createdAt?: string };
@@ -206,6 +209,15 @@ function cleanWords(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
 }
 
+function codingContribution(question: Question, value: string) {
+  if (question.kind !== "coding") return value;
+  const starterLines = new Set((question.starterCode || "").split("\n").map((line) => line.trim()).filter(Boolean));
+  return value.split("\n").filter((line) => {
+    const trimmed = line.trim();
+    return trimmed && !starterLines.has(trimmed);
+  }).join("\n").trim();
+}
+
 function defaultInterviewDate() {
   const date = new Date();
   date.setDate(date.getDate() + 2);
@@ -303,13 +315,14 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const safeQuestionIndex = Math.min(Math.max(questionIndex, 0), Math.max(sessionQuestions.length - 1, 0));
   const question = sessionQuestions[safeQuestionIndex] || defaultQuestions[0];
-  const localResult = useMemo(() => evaluate(question, answer), [answer, question]);
+  const scoringAnswer = useMemo(() => codingContribution(question, answer), [answer, question]);
+  const localResult = useMemo(() => evaluate(question, scoringAnswer), [question, scoringAnswer]);
   const questionAttempts = attempts[question.id] ?? [];
   const completedQuestions = Object.values(attempts).filter((items) => items.length > 0).length;
   const allAttempts = Object.values(attempts).flat();
   const averageScore = allAttempts.length ? Math.round(allAttempts.reduce((sum, item) => sum + item.score, 0) / allAttempts.length) : 0;
   const fillerCount = fillerWords.reduce((count, filler) => count + (answer.toLowerCase().match(new RegExp(`\\b${filler.replace(" ", "\\s+")}\\b`, "g"))?.length || 0), 0);
-  const answerReady = question.kind === "coding" ? answer.trim().length >= 12 : answer.trim().length >= 35;
+  const answerReady = question.kind === "coding" ? scoringAnswer.length >= 12 : answer.trim().length >= 35;
 
   useEffect(() => {
     if (!isGenerating) return;
@@ -427,13 +440,13 @@ export default function Home() {
   function runCode() {
     if (!answer.trim()) return;
     setCodeOutput("Running…");
-    const workerSource = `self.onmessage=async({data})=>{const format=v=>{if(typeof v==='string')return v;if(v===undefined)return'undefined';try{return JSON.stringify(v,null,2)}catch{return String(v)}};const logs=[];const safeConsole={log:(...v)=>logs.push(v.map(format).join(' ')),warn:(...v)=>logs.push('Warning: '+v.map(format).join(' ')),error:(...v)=>logs.push('Error: '+v.map(format).join(' '))};try{const expression=String(data.expression||'').trim();const suffix=expression?'\\nreturn ('+expression+');':'';const body='"use strict"; return (async()=>{\\n'+data.code+suffix+'\\n})();';const result=await new Function('console','fetch','XMLHttpRequest','WebSocket','importScripts',body)(safeConsole,undefined,undefined,undefined,undefined);const sections=[];if(logs.length)sections.push('Console:\\n'+logs.join('\\n'));if(expression)sections.push('Result:\\n'+format(result));self.postMessage({ok:true,text:sections.join('\\n\\n')||'Code ran successfully. Add console.log(...) or a test expression to see a value.'})}catch(error){self.postMessage({ok:false,text:error?.message||String(error)})}}`;
+    const workerSource = `self.onmessage=async({data})=>{const format=v=>{if(typeof v==='string')return v;if(v===undefined)return'undefined';try{return JSON.stringify(v,null,2)}catch{return String(v)}};const logs=[];const safeConsole={log:(...v)=>logs.push(v.map(format).join(' ')),warn:(...v)=>logs.push('Warning: '+v.map(format).join(' ')),error:(...v)=>logs.push('Error: '+v.map(format).join(' '))};try{const expression=String(data.expression||'').trim();const suffix=expression?'\\nreturn ('+expression+');':'';const body='"use strict"; return (async()=>{\\n'+data.code+suffix+'\\n})();';const result=await new Function('console','fetch','XMLHttpRequest','WebSocket','importScripts',body)(safeConsole,undefined,undefined,undefined,undefined);const sections=[];if(logs.length)sections.push('Console:\\n'+logs.join('\\n'));if(expression)sections.push('Result:\\n'+format(result));self.postMessage({ok:true,text:sections.join('\\n\\n')||'Code ran successfully. Add console.log(...) or a test expression to see a value.'})}catch(error){const sections=[];if(logs.length)sections.push('Console:\\n'+logs.join('\\n'));sections.push('Error:\\n'+(error?.message||String(error)));self.postMessage({ok:false,text:sections.join('\\n\\n')})}}`;
     const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
     const worker = new Worker(workerUrl);
     const timeout = window.setTimeout(() => { worker.terminate(); URL.revokeObjectURL(workerUrl); setCodeOutput("Stopped after 2 seconds. Check for an infinite loop."); }, 2000);
     worker.onmessage = (event: MessageEvent<{ ok: boolean; text: string }>) => {
       window.clearTimeout(timeout);
-      setCodeOutput(`${event.data.ok ? "✓" : "Error:"} ${event.data.text}`);
+      setCodeOutput(`${event.data.ok ? "✓ " : ""}${event.data.text}`);
       worker.terminate();
       URL.revokeObjectURL(workerUrl);
     };
@@ -530,6 +543,7 @@ export default function Home() {
       formData.append("role", role);
       formData.append("question", question.prompt);
       formData.append("answer", answer);
+      formData.append("starterCode", question.starterCode || "");
       formData.append("reference", question.reference);
       formData.append("expected", question.expected.join(", "));
       formData.append("suggested", question.suggested);
@@ -758,16 +772,16 @@ export default function Home() {
 
       <section className="practice-area">
         <header className="practice-header"><div><p className="eyebrow">{question.category.toUpperCase()}</p><span className="question-progress">QUESTION {safeQuestionIndex + 1} OF {sessionQuestions.length}</span></div><div className="header-actions"><button className="mobile-report-button" onClick={() => setScreen("report")}><BarChart3 size={13} aria-hidden="true" /> {averageScore || "—"}</button><span className={`question-type-pill ${question.kind === "coding" ? "coding" : "discussion"}`}>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.kind === "coding" ? "Coding task" : "Discussion"}</span><span className="difficulty-pill">{question.level}</span><span className="ai-badge"><Sparkles size={13} aria-hidden="true" /> AI interviewer</span></div></header>
-        <article className="question-card"><div className="question-meta"><span>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1><details className="intent-note"><summary><Lightbulb size={15} aria-hidden="true" /> Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><Lightbulb size={15} aria-hidden="true" /><span><b>Coach tip:</b> Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds.</span></p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b><ListChecks size={14} aria-hidden="true" /> Check these cases</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
+        <article className="question-card"><div className="question-meta"><span>{question.kind === "coding" ? <Code2 size={13} aria-hidden="true" /> : <MessageCircleQuestion size={13} aria-hidden="true" />}{question.reference}</span><span>•</span><span>Tests: {question.tested.join(", ")}</span></div><h1>{question.prompt}</h1>{question.kind === "coding" && <div className="code-contract"><div><span>REQUIRED DECLARATION</span><code>{question.functionDeclaration || question.starterCode?.split("\n")[0] || "Use the declaration in the starter code"}</code></div><div><span>EXPECTED OUTPUT</span><pre>{question.expectedOutput || "Run the supplied test expression and match its expected value."}</pre></div></div>}<details className="intent-note"><summary><Lightbulb size={15} aria-hidden="true" /> Why the interviewer asks this</summary><p>They are checking {question.tested.join(", ")}, whether your explanation matches <b>{question.reference}</b>, and how clearly you separate your contribution from the team’s work.</p></details><p className="coach-note"><Lightbulb size={15} aria-hidden="true" /><span><b>Coach tip:</b> {question.kind === "coding" ? "State the contract, implement the smallest correct solution, run every case, then explain complexity. Starter code never counts toward your score." : "Lead with your contribution, then explain the decision you made and its result. Keep it under 90 seconds."}</span></p>{question.kind === "coding" && Boolean(question.testCases?.length) && <div className="test-case-list"><b><ListChecks size={14} aria-hidden="true" /> Inputs and expected outputs</b>{question.testCases?.map((item) => <code key={item}>{item}</code>)}</div>}</article>
 
         <section className="answer-card">
-          <div className="answer-heading"><div><h2>{question.kind === "coding" ? "Your solution" : "Your answer"}</h2><p>{question.kind === "coding" ? "Write JavaScript, run it, then explain your choices." : "Speak or type naturally. The coach looks for useful detail, not length."}</p></div><span className={answerReady ? "word-good" : ""}>{question.kind === "coding" ? `${answer.split("\n").length} lines` : `${cleanWords(answer).length} words`}</span></div>
+          <div className="answer-heading"><div><h2>{question.kind === "coding" ? "Your solution" : "Your answer"}</h2><p>{question.kind === "coding" ? "Complete the declaration, run the sample, and inspect both Console and Result." : "Speak or type naturally. The coach looks for useful detail, not length."}</p></div><span className={answerReady ? "word-good" : ""}>{question.kind === "coding" ? `${scoringAnswer.split("\n").filter(Boolean).length} added lines` : `${cleanWords(answer).length} words`}</span></div>
           {question.kind !== "coding" && <div className="voice-toolbar"><button className={`voice-button ${isListening ? "is-live" : ""}`} disabled={!speechSupported} onClick={toggleVoice}>{isListening ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <Mic size={15} aria-hidden="true" />}{isListening ? "Stop recording" : "Answer with voice"}</button><div className={`answer-timer ${secondsLeft <= 15 ? "time-low" : ""}`}><Timer size={14} aria-hidden="true" /><strong>{String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:{String(secondsLeft % 60).padStart(2, "0")}</strong><span>90-sec target</span></div><span>{speechSupported ? `${fillerCount} filler word${fillerCount === 1 ? "" : "s"}` : "Voice unavailable — type your answer"}</span></div>}
           <textarea className={question.kind === "coding" ? "code-editor" : ""} value={answer} disabled={isEvaluating} onChange={(event) => { setAnswer(event.target.value); if (feedback) setFeedback(null); }} placeholder={question.kind === "coding" ? "Write your JavaScript solution here…" : "Start with the situation or your responsibility. Then explain what you did and what happened..."} aria-label={question.kind === "coding" ? "Your code solution" : "Your interview answer"} spellCheck={question.kind !== "coding"} />
-          {question.kind === "coding" && <div className="code-runner"><div className="code-test-row"><label>Test expression <span>OPTIONAL</span><input value={codeExpression} onChange={(event) => setCodeExpression(event.target.value)} placeholder="e.g. transformItems([1, 2, 3])" spellCheck={false} /></label><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}><Play size={14} fill="currentColor" aria-hidden="true" /> Run JavaScript</button></div><small className="code-comment-note">JavaScript comments work normally: <code>{"// one line"}</code> and <code>{"/* multiple lines */"}</code></small><pre aria-live="polite">{codeOutput || "Console logs and the test-expression result will appear here."}</pre></div>}
+          {question.kind === "coding" && <div className="code-runner"><div className="code-test-row"><label>Runnable sample / test expression<input value={codeExpression} onChange={(event) => setCodeExpression(event.target.value)} placeholder="e.g. transformItems([1, 2, 3])" spellCheck={false} /></label><button className="secondary-button" onClick={runCode} disabled={!answer.trim()}><Play size={14} fill="currentColor" aria-hidden="true" /> Run JavaScript</button></div><small className="code-comment-note">The sample logs its values and returns the result. Comments work normally: <code>{"// one line"}</code> and <code>{"/* multiple lines */"}</code>. Prefilled lines do not count toward your score.</small><pre aria-live="polite">{codeOutput || "Console logs and the sample result will appear here."}</pre></div>}
           {!feedback && <div className="answer-help">
             <button className="help-button" onClick={() => setShowSuggested((current) => !current)}><BookOpenCheck size={14} aria-hidden="true" />{showSuggested ? "Hide answer guide" : "I don’t know — show answer guide"}</button>
-            {showSuggested && <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>}
+            {showSuggested && (question.kind === "coding" ? <div className="pre-answer-guide coding-guide"><b>Approach</b><p>{question.solutionOutline || question.suggested}</p><b>Working reference solution</b>{question.referenceSolution ? <pre>{question.referenceSolution}</pre> : <p>Create a new Coding Lab session to receive the upgraded executable answer.</p>}<small>Study why it works, close the guide, then write the solution yourself. The guide and starter code never count toward your score.</small></div> : <div className="pre-answer-guide"><b>Use this structure</b><p>{question.suggested}</p><small>Read it, close the guide, then answer again in your own words. Keep only details you can truthfully explain.</small></div>)}
           </div>}
           {!feedback && <div className="answer-footer"><span>{!answerReady ? (question.kind === "coding" ? "Add a complete solution before requesting feedback." : "Give a few complete sentences to get feedback.") : "Ready when you are."}</span><button className="primary-button" disabled={!answerReady || isEvaluating} onClick={submitAnswer}>{isEvaluating ? <Sparkles className="icon-spin" size={15} aria-hidden="true" /> : <CheckCircle2 size={15} aria-hidden="true" />}{isEvaluating ? "AI coach is reviewing…" : "Get coaching feedback"}<ArrowRight size={15} aria-hidden="true" /></button></div>}
           {evaluationError && <p className="inline-warning" role="status">{evaluationError}</p>}
@@ -777,7 +791,7 @@ export default function Home() {
           <div className="score-card"><div className="score-orbit"><strong>{feedback.total}</strong><span>out of 100</span></div><div><p className="eyebrow">YOUR COACHING RESULT</p><h2>{feedback.total >= 75 ? "A strong answer with room to sharpen." : "Good start. Add the details that make it believable."}</h2><p>{feedback.summary}</p></div><div className="attempt-history"><span>ATTEMPTS</span>{questionAttempts.map((attempt, index) => <div key={`${attempt.score}-${index}`}><small>Try {index + 1}</small><b>{attempt.score}</b>{index > 0 && <em>{attempt.score - questionAttempts[index - 1].score >= 0 ? "+" : ""}{attempt.score - questionAttempts[index - 1].score}</em>}</div>)}</div></div>
           <div className="score-breakdown">{scoreLabels.map(([key, label, max]) => { const value = feedback.scores[key]; return <div key={key}><div><span>{label}</span><b>{value}/{max}</b></div><i><i style={{ width: `${(value / max) * 100}%` }} /></i></div>; })}</div>
           <div className="feedback-grid"><div className="feedback-box success"><h3><CheckCircle2 size={17} aria-hidden="true" /> What worked</h3><ul>{feedback.worked.map((item) => <li key={item}>{item}</li>)}</ul></div><div className="feedback-box improve"><h3><CircleAlert size={17} aria-hidden="true" /> Make it stronger</h3><ul>{feedback.improve.map((item) => <li key={item}>{item}</li>)}</ul></div></div>
-          <details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>See a stronger answer <span>⌄</span></summary><div><p>{feedback.betterAnswer}</p><small>Use this as a structure guide. Keep only details you can truthfully defend.</small></div></details>
+          <details className="suggested-answer" open={showSuggested} onToggle={(event) => setShowSuggested((event.target as HTMLDetailsElement).open)}><summary>{question.kind === "coding" ? "See the working reference solution" : "See a stronger answer"} <span>⌄</span></summary><div>{question.kind === "coding" && question.referenceSolution ? <pre className="feedback-code">{question.referenceSolution}</pre> : <p>{feedback.betterAnswer}</p>}<small>{question.kind === "coding" ? "Compare the logic and edge cases, then rewrite it yourself. Reference code is never included in your score." : "Use this as a structure guide. Keep only details you can truthfully defend."}</small></div></details>
           <div className="follow-up-card"><p className="eyebrow"><MessageCircleQuestion size={14} aria-hidden="true" /> THE INTERVIEWER CONTINUES</p><h3>{feedback.followUp}</h3><div>{feedback.relatedTopics.map((topic) => <span key={topic}>{topic}</span>)}</div></div>
           <div className="feedback-actions"><button className="secondary-button" onClick={tryAgain}><RotateCcw size={15} aria-hidden="true" /> Improve this answer</button><button className="secondary-button" onClick={practiseFollowUp}><MessageCircleQuestion size={15} aria-hidden="true" /> Answer follow-up</button><button className="primary-button" onClick={nextQuestion}>Next question <ArrowRight size={15} aria-hidden="true" /></button></div>
         </section>}

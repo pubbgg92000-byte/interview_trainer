@@ -46,8 +46,13 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(page, /THE INTERVIEWER CONTINUES/);
   assert.match(page, /Answer with voice/);
   assert.match(page, /Run JavaScript/);
-  assert.match(page, /Test expression/);
-  assert.match(page, /Console logs and the test-expression result/);
+  assert.match(page, /Runnable sample \/ test expression/);
+  assert.match(page, /Console logs and the sample result/);
+  assert.match(page, /REQUIRED DECLARATION/);
+  assert.match(page, /EXPECTED OUTPUT/);
+  assert.match(page, /Working reference solution/);
+  assert.match(page, /Prefilled lines do not count toward your score/);
+  assert.match(page, /codingContribution/);
   assert.match(page, /worker\.postMessage\(\{ code: answer, expression: codeExpression \}\)/);
   assert.match(page, /READINESS REPORT/);
   assert.match(page, /Why the interviewer asks this/);
@@ -58,6 +63,10 @@ test("keeps AI keys private and includes the full mobile coaching flow", async (
   assert.match(page, /screen, questions: sessionQuestions, profile, attempts/);
   assert.match(route, /codingFallback/);
   assert.match(route, /sample_call/);
+  assert.match(route, /reference_solution/);
+  assert.match(route, /function_declaration/);
+  assert.match(route, /expected_output/);
+  assert.match(route, /unchangedStarter/);
   assert.match(route, /questions\.filter\(\(item\) => item\.kind === "coding"\)/);
   assert.match(route, /process\.env\.GEMINI_API_KEY/);
   assert.match(route, /process\.env\.OPENROUTER_API_KEY/);
